@@ -1,4 +1,7 @@
 import pytest
+import os
+
+xmlpath = os.path.join(os.path.dirname(__file__), 'test.xml')
 
 
 class DictDiffer(object):
@@ -36,15 +39,15 @@ class DictDiffer(object):
 
 
 def test_read_write():
-    from miindio import convert_xml_dict, dump_xml
-    p = convert_xml_dict('test.xml')
-    dump_xml(p, 'test.xml')
-    q = convert_xml_dict('test.xml')
+    from core import convert_xml_dict, dump_xml
+    p = convert_xml_dict(xmlpath)
+    dump_xml(p, xmlpath)
+    q = convert_xml_dict(xmlpath)
     assert DictDiffer(p, q).changed() == set()
 
 
 def test_change_params():
-    from miindio import set_params, convert_xml_dict
+    from core import set_params, convert_xml_dict
     params = {
         'Connection': {
             '_list': {
@@ -61,14 +64,15 @@ def test_change_params():
             }
         }
     }
-    p = convert_xml_dict('test.xml')
+    p = convert_xml_dict(xmlpath)
     set_params(p, **params)
-    assert params['Simulation']['Connections']['Connection'][3]['content'] == '-1000 100. 0001'
-    assert params['Simulation']['Algorithms']['Algorithm'][2]['expression'] == '1.'
-    assert params['Simulation']['SimulationRunParameter']['t_end'] == '1'
+    assert p['Simulation']['Connections']['Connection'][3]['content'] == '-1000 100. 0001'
+    assert p['Simulation']['Algorithms']['Algorithm'][2]['expression'] == '1.'
+    assert p['Simulation']['SimulationRunParameter']['t_end'] == '1'
 
 
 def test_no_change_params():
+    from core import set_params, convert_xml_dict
     params = {
         'Connection': {
             '_list': {
@@ -77,7 +81,7 @@ def test_no_change_params():
            }
        }
     }
-    p = convert_xml_dict('test.xml')
+    p = convert_xml_dict(xmlpath)
     with pytest.raises(TypeError):
         set_params(p, **params)
     params = {
@@ -88,7 +92,7 @@ def test_no_change_params():
            }
        }
     }
-    p = convert_xml_dict('test.xml')
+    p = convert_xml_dict(xmlpath)
     with pytest.raises(TypeError):
         set_params(p, **params)
     params = {
@@ -99,6 +103,6 @@ def test_no_change_params():
            }
        }
     }
-    p = convert_xml_dict('test.xml')
+    p = convert_xml_dict(xmlpath)
     with pytest.raises(KeyError):
         set_params(p, **params)
