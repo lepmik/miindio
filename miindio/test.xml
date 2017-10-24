@@ -1,0 +1,30 @@
+<?xml version="1.0" ?>
+<Simulation WeightType="DelayedConnection">
+	<Algorithms>
+		<Algorithm TimeStep="0.0002" modelfile="aexp7ee3879d-3dd7-41d2-972e-47f4d16845cd.model" name="E" type="MeshAlgorithm">
+			<MatrixFile>aexp7ee3879d-3dd7-41d2-972e-47f4d16845cd_1_0_0_0_.mat</MatrixFile>
+			<MatrixFile>aexp7ee3879d-3dd7-41d2-972e-47f4d16845cd_-1_0_0_0_.mat</MatrixFile>
+		</Algorithm>
+		<Algorithm TimeStep="0.0002" modelfile="aexpnoa283cc1a3-4248-4ad0-a38d-01e44a2b95d3.model" name="I" type="MeshAlgorithm">
+			<MatrixFile>aexpnoa283cc1a3-4248-4ad0-a38d-01e44a2b95d3_1_0_0_0_.mat</MatrixFile>
+			<MatrixFile>aexpnoa283cc1a3-4248-4ad0-a38d-01e44a2b95d3_-1_0_0_0_.mat</MatrixFile>
+		</Algorithm>
+		<Algorithm expression="100." name="Exc Input" type="RateFunctor"/>
+	</Algorithms>
+	<Nodes>
+		<Node algorithm="E" name="adex E" type="EXCITATORY_DIRECT"/>
+		<Node algorithm="I" name="adex I" type="INHIBITORY_DIRECT"/>
+		<Node algorithm="Exc Input" name="Inp" type="NEUTRAL"/>
+	</Nodes>
+	<Connections>
+		<Connection In="Inp" Out="adex E">1 1 0</Connection>
+		<Connection In="Inp" Out="adex I">1 1 0</Connection>
+		<Connection In="adex I" Out="adex E">100 -1 0</Connection>
+		<Connection In="adex E" Out="adex I">-1000 1 0</Connection>
+	</Connections>
+	<SimulationIO OnScreen="FALSE" SimulationName="cond-bench" WithState="TRUE" WriteNet="TRUE">
+		<CanvasParameter Dense_max="2.5" Dense_min="0" F_max="200" F_min="0" State_max="1.0" State_min="0" T_max="1." T_min="0"/>
+		<CanvasNode Name="adex EI"/>
+	</SimulationIO>
+	<SimulationRunParameter max_iter="1000000" name_log="cond-bench.log" t_begin="0" t_end="1" t_report="1e-03" t_state_report="1e-03" t_step="0.0002" t_update="0.002"/>
+</Simulation>
