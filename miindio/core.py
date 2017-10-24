@@ -180,7 +180,7 @@ def convert_dict_xml(dictionary):
 
 class MiindIO:
     def __init__(self, xml_path, submit_name=None, cwd=None,
-                 MIIND_BUILD_PATH=None, **kwargs):
+                 MIIND_BUILD_PATH=None):
         self.cwd = cwd or os.getcwd()
         self.xml_path = os.path.abspath(os.path.join(self.cwd, xml_path))
         assert os.path.exists(self.xml_path)
@@ -194,7 +194,6 @@ class MiindIO:
                                              xml_base_fname)
         self.miind_executable = xml_base_fname
         self.params = convert_xml_dict(self.xml_path)
-        set_params(self.params, **kwargs)
         algorithm = self.params['Simulation']['Algorithms']['Algorithm']
         mesh_algo = [d for d in algorithm if d['type'] == 'MeshAlgorithm'][0]
         self.model_fname = os.path.split(mesh_algo['modelfile'])[-1]
@@ -305,7 +304,8 @@ class MiindIO:
                     print(density[ode_sys.map(i,j)])
                     raise ValueError
 
-    def generate(self, overwrite=False):
+    def generate(self, overwrite=False, **kwargs):
+        set_params(self.params, **kwargs)
         shutil.copyfile(self.xml_path, self.xml_path + '.bak')
         dump_xml(self.params, self.xml_path)
         if os.path.exists(self.output_directory) and overwrite:
