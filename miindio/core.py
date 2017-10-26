@@ -1,8 +1,3 @@
-import xmljson
-import xml.etree.ElementTree as ET
-import xml.dom.minidom as minidom
-from pprint import pprint
-import json
 import os
 import glob
 import ROOT
@@ -12,177 +7,18 @@ import shutil
 import copy
 import pandas as pd
 import collections
+from xmldict import dict_to_xml, xml_to_dict
+from tools import *
 # From MIIND
 import directories
 import mesh
 from ode2dsystem import Ode2DSystem
 
 
-class cd:
-    """Context manager for changing the current working directory"""
-    def __init__(self, newPath):
-        self.newPath = os.path.expanduser(newPath)
-
-    def __enter__(self):
-        self.savedPath = os.getcwd()
-        os.chdir(self.newPath)
-
-    def __exit__(self, etype, value, traceback):
-        os.chdir(self.savedPath)
-
-
-def read_mesh_file(filename):
-    f = open(filename)
-    line = f.readline()
-    data = np.array([float(x) for x in line.split()[2::3]])
-    if any(data < 0):
-        raise ValueError('Negative density')
-    return np.array(data)
-
-
-def read_projection_file(filename):
-    root = ET.parse(filename).getroot()
-    odict = xmljson.yahoo.data(root)
-    # return json.loads(json.dumps(odict))
-    return root
-
-
-def prettify_xml(elem):
-    """Return a pretty-printed XML string for an Element, string or dict.
-    """
-    if isinstance(elem, (dict, collections.OrderedDict)):
-        string = convert_dict_xml(elem)
-    elif isinstance(elem, ET.ElementTree):
-        string = ET.tostring(elem, 'utf-8')
-    elif isinstance(elem, str):
-        string = elem
-    else:
-        raise TypeError('type {} not recognized.'.format(type(elem)))
-    reparsed = minidom.parseString(string)
-    return reparsed.toprettyxml(indent="\t")
-
-
-def dump_xml(params, fpathout):
-    path, fname = os.path.split(fpathout)
-    if not os.path.exists(path):
-        os.makedirs(path)
-    with open(fpathout, 'w') as f:
-        f.write(prettify_xml(params))
-
-
-def deep_update(d, other, strict=False):
-    for k, v in other.items():
-        d_v = d.get(k)
-        if (isinstance(v, collections.Mapping) and
-            isinstance(d_v, collections.Mapping)):
-            deep_update(d_v, v, strict=strict)
-        else:
-            if strict:
-                if not d_v:
-                    raise ValueError('Unable to update "{}" '.format(k) +
-                                     'according to the "strict" rule.')
-            d[k] = copy.deepcopy(v)
-
-
-def map_key(dic, key, path=None):
-    path = path or []
-    if isinstance(dic, collections.Mapping):
-        for k, v in dic.items():
-            local_path = path[:]
-            local_path.append(k)
-            for b in map_key(v, key, local_path):
-                 yield b
-    if key in path:
-        yield path, dic
-
-
-def pack_list_dict(parts):
-    if len(parts) == 1:
-        return parts[0]
-    elif len(parts) > 1:
-        return {parts[0]: pack_list_dict(parts[1:])}
-    return parts
-
-
-def set_params(params, **kwargs):
-    if not kwargs:
-        return
-    for key, val in kwargs.items():
-        mapping = list(map_key(params, key))
-        if len(mapping) == 0:
-            raise ValueError('Unable to map instance of "{}", '.format(key))
-        if len(mapping) > 1:
-            raise ValueError('Found multiple instances of "{}", '.format(key) +
-                             'mapping must be unique')
-        path, old_vals = mapping[0]
-        if isinstance(old_vals, list) and '_list' in val:
-            assert len(val.keys()) == 1
-            new_vals = val['_list']
-            assert isinstance(new_vals, collections.Mapping)
-            for idx in new_vals:
-                # assert there are no new keys
-                if set(new_vals[idx].keys()) != set(old_vals[idx].keys()):
-                    raise KeyError('No new keys allowed.')
-                # assert the values that are changed are numeric values (see isnumeric)
-                changed_keys = [k for k, nv in new_vals[idx].items()
-                                if old_vals[idx][k] != nv]
-                if not  all(isnumeric(new_vals[idx][k]) for k in changed_keys):
-                    bad_vals = [(k, new_vals[idx][k]) for k in changed_keys]
-                    raise TypeError('Unable to change non numeric values ' +
-                                    '{}'.format(bad_vals))
-                old_vals[idx] = new_vals[idx]
-            val = old_vals
-        path.append(val)
-        packed_list = pack_list_dict(path)
-        deep_update(params, packed_list, strict=True)
-
-
-def remove_txt(txt, *args):
-    for arg in args:
-        txt = txt.replace(arg, '')
-    return txt
-
-
-def isnumeric(val):
-    assert isinstance(val, unicode)
-    return remove_txt(val, ' ', '-', '.').isnumeric()
-
-
-def convert_xml_dict(filename):
-    root = ET.parse(filename).getroot()
-    odict = xmljson.yahoo.data(root)
-    return odict
-
-
-def pretty_print_params(arg):
-    if isinstance(arg, str):
-        arg = convert_xml_dict(arg)
-    else:
-        assert isinstance(arg, collections.Mapping)
-    pprint(json.loads(json.dumps(arg)))
-
-
-def to_json(arg, fname='params.json'):
-    if isinstance(arg, str):
-        arg = convert_xml_dict(arg)
-    else:
-        assert isinstance(arg, collections.Mapping)
-    with open(fname, 'w') as outfile:
-        json.dump(prm_no_units, outfile,
-                  sort_keys=True, indent=4)
-
-
-def convert_dict_xml(dictionary):
-    elem = xmljson.yahoo.etree(dictionary)
-    assert len(elem) == 1
-    return ET.tostring(elem[0])
-
-
 class MiindIO:
-    def __init__(self, xml_path, submit_name=None, cwd=None,
+    def __init__(self, xml_path, submit_name=None,
                  MIIND_BUILD_PATH=None):
-        self.cwd = cwd or os.getcwd()
-        self.xml_path = os.path.abspath(os.path.join(self.cwd, xml_path))
+        self.xml_path = os.path.abspath(xml_path)
         assert os.path.exists(self.xml_path)
         if MIIND_BUILD_PATH is not None:
             MIIND_BUILD_PATH = os.path.abspath(MIIND_BUILD_PATH)
@@ -206,7 +42,6 @@ class MiindIO:
         self.root_path = os.path.join(self.output_directory,
                                       self.simulation_name + '_0.root')
         if MIIND_BUILD_PATH is None:
-            print('Trying to find the MIIND build path.')
             srch = 'miind/build'
             path = [n for n in os.environ["PATH"].split(':') if srch in n]
             if len(path) > 0:
@@ -216,6 +51,7 @@ class MiindIO:
                               '"{}" in the PATH variable.'.format(srch))
             idx = path.index(srch) + len(srch)
             path = path[:idx]
+            print('Found the MIIND build path at {}.'.format(path))
             self.MIIND_APPS = os.path.join(path, 'apps')
         else:
             self.MIIND_APPS = os.path.join(MIIND_BUILD_PATH, 'apps')
@@ -277,7 +113,7 @@ class MiindIO:
             subprocess.call([projection_exe, self.mesh_pathname],
                             cwd=self.xml_location)
             vmin, vmax, vn, wmin, wmax, wn = input('Input "vmin, vmax, vn, wmin, wmax, wn"')
-            subprocess.call([projection_exe, self.mesh_pathname, vmin, vmax, vn, wmin, wmax, wn], cwd=self.cwd)
+            subprocess.call([projection_exe, self.mesh_pathname, vmin, vmax, vn, wmin, wmax, wn], cwd=self.xml_location)
         projection = read_projection_file(proj_pathname)
         return projection
         fnames = glob.glob(os.path.join(self.output_directory,
@@ -305,12 +141,12 @@ class MiindIO:
                     raise ValueError
 
     def generate(self, overwrite=False, **kwargs):
-        set_params(self.params, **kwargs)
         shutil.copyfile(self.xml_path, self.xml_path + '.bak')
+        set_params(self.params, **kwargs)
         dump_xml(self.params, self.xml_path)
         if os.path.exists(self.output_directory) and overwrite:
             shutil.rmtree(self.output_directory)
-        with cd(self.cwd):
+        with cd(self.xml_location):
             directories.add_executable(self.submit_name, [self.xml_path], '')
         fnames = os.listdir(self.output_directory)
         if 'CMakeLists.txt' in fnames:
@@ -318,8 +154,9 @@ class MiindIO:
                              '-DCMAKE_CXX_FLAGS=-fext-numeric-literals'],
                              cwd=self.output_directory)
             subprocess.call(['make'], cwd=self.output_directory)
-            subprocess.call(['cp', self.xml_path, '.'],
-                            cwd=self.output_directory)
+            shutil.move(self.xml_path,
+                        os.path.join(self.output_directory, self.xml_fname))
+            shutil.move(self.xml_path + '.bak', self.xml_path)
 
     def run(self):
         subprocess.call('./' + self.miind_executable, cwd=self.output_directory)
