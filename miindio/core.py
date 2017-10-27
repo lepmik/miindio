@@ -29,7 +29,7 @@ class MiindIO:
         self.output_directory = os.path.join(self.xml_location, submit_name,
                                              xml_base_fname)
         self.miind_executable = xml_base_fname
-        self.params = convert_xml_dict(self.xml_path)
+        self.load_xml()
         algorithm = self.params['Simulation']['Algorithms']['Algorithm']
         mesh_algo = [d for d in algorithm if d['type'] == 'MeshAlgorithm'][0]
         self.model_fname = os.path.split(mesh_algo['modelfile'])[-1]
@@ -58,7 +58,7 @@ class MiindIO:
             self.MIIND_APPS = os.path.join(MIIND_BUILD_PATH, 'apps')
         assert os.path.exists(self.MIIND_APPS)
 
-    def convert_root(self, save=True):
+    def convert_root(self):
         f = ROOT.TFile(self.root_path)
         keys = [key.GetName() for key in list(f.GetListOfKeys())]
         graphs = {key: f.Get(key) for key in keys
@@ -95,11 +95,29 @@ class MiindIO:
                     data[xy][key] = pd.DataFrame(val, index=pd_idx[key]).sort_index()
                 else:
                     data[xy][key] = pd.DataFrame(val).T
-        dname = os.path.join(os.path.splitext(self.root_path)[0]+'.npz')
-        if save:
-            np.savez(dname, data=data)
         print 'Extracted %i graphs from root file' % len(data.keys())
         return data
+
+    @property
+    def data(self):
+        if not hasattr(self, '_data'):
+            self._data = convert_root()
+            xmlpath = os.path.join(self.output_directory, self.xml_fname)
+            self._data['params'] = convert_xml_dict(xmlpath)
+        return self._data
+
+    def set_params(self, **kwargs):
+        set_params(self.params, **kwargs)
+
+    def save_data(self):
+        dname = os.path.join(os.path.splitext(self.root_path)[0]+'.npz')
+        np.savez(dname, data=data)
+
+    def dump_xml(self):
+        dump_xml(self.params, self.xml_path)
+
+    def load_xml(self):
+        self.params = convert_xml_dict(self.xml_path)
 
     def convert_mesh(self, save=True):
         if not self.WITH_STATE:
@@ -143,8 +161,8 @@ class MiindIO:
 
     def generate(self, overwrite=False, **kwargs):
         shutil.copyfile(self.xml_path, self.xml_path + '.bak')
-        set_params(self.params, **kwargs)
-        dump_xml(self.params, self.xml_path)
+        self.set_params(**kwargs)
+        self.dump_xml()
         if os.path.exists(self.output_directory) and overwrite:
             shutil.rmtree(self.output_directory)
         with cd(self.xml_location):
