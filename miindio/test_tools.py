@@ -5,7 +5,7 @@ import copy
 import xml.etree.ElementTree as ET
 
 xmlpath = os.path.join(os.path.dirname(__file__), 'test.xml')
-
+testpath = xmlpath.replace('.xml', '') + '_temp'
 
 def test_dictify():
     from tools import dictify, DictDiffer
@@ -17,7 +17,8 @@ def test_dictify():
     }
     b = copy.deepcopy(a)
     dictify(a)
-    assert DictDiffer(a['d'], {0: 'e', 1: 'f', 2: {0: 1, 1: 2, 2: 'd'}}).changed() == set()
+    val = {0: 'e', 1: 'f', 2: {0: 1, 1: 2, 2: 'd'}}
+    assert DictDiffer(a['d'], val).changed() == set()
     assert DictDiffer(b, a).changed() == set('d')
 
 
@@ -38,21 +39,21 @@ def test_listify():
 def test_read_write_dict_equal():
     from tools import convert_xml_dict, dump_xml, to_json, DictDiffer
     p = convert_xml_dict(xmlpath)
-    to_json(p, xmlpath + '.json')
+    to_json(p, testpath + '.json')
     p = json.loads(json.dumps(p))
-    dump_xml(p, xmlpath + 'tmp.xml')
-    q = convert_xml_dict(xmlpath + 'tmp.xml')
+    dump_xml(p, testpath + '.xml')
+    q = convert_xml_dict(testpath + '.xml')
     q = json.loads(json.dumps(q))
     assert DictDiffer(p, q).changed() == set()
 
 
-# def test_read_write_string_equal():
-#     from tools import convert_xml_dict, dump_xml, to_json, DictDiffer
-#     p = convert_xml_dict(xmlpath)
-#     dump_xml(p, xmlpath + '.tmp')
-#     q_string = ET.tostring(ET.parse(xmlpath + '.tmp').getroot())
-#     p_string = ET.tostring(ET.parse(xmlpath).getroot())
-#     assert q_string == p_string
+def test_read_write_string_equal():
+    from tools import convert_xml_dict, dump_xml, to_json, DictDiffer
+    p = convert_xml_dict(xmlpath)
+    dump_xml(p, testpath + '.xml')
+    q_string = ET.tostring(ET.parse(testpath + '.xml').getroot())
+    p_string = ET.tostring(ET.parse(xmlpath).getroot())
+    assert q_string == p_string
 
 
 def test_set_content():
@@ -72,12 +73,15 @@ def test_change_list_params1():
     from tools import set_params, convert_xml_dict
     params = {
         'Connection': {
-            3: {'In': 'adex E', 'Out': 'adex I', 'content': '-1000 100. 0001'}
+            3: {'content': '-1000 100. 0001'}
         }
     }
     p = convert_xml_dict(xmlpath)
     set_params(p, **params)
-    assert p['Simulation']['Connections']['Connection'][3]['content'] == '-1000 100. 0001'
+    base = p['Simulation']['Connections']['Connection'][3]
+    assert base['content'] == '-1000 100. 0001'
+    assert base['In'] == 'adex E'
+    assert base['Out'] == 'adex I'
 
 
 def test_change_list_params2():
@@ -89,17 +93,16 @@ def test_change_list_params2():
     }
     p = convert_xml_dict(xmlpath)
     set_params(p, **params)
-    assert p['Simulation']['Algorithms']['Algorithm'][2]['expression']['content'] == 1.
-    assert p['Simulation']['Algorithms']['Algorithm'][2]['type'] == "RateFunctor"
+    base = p['Simulation']['Algorithms']['Algorithm'][2]
+    assert base['expression']['content'] == 1.
+    assert base['type'] == "RateFunctor"
 
 
 def test_change_list_params_no():
     from tools import set_params, convert_xml_dict
     params = {
         'Algorithm': {
-            2: {'expression': 1,
-                'name': u'Exc Input',
-                'type': u'RateFunctor'}
+            2: {'expression': 1}
         }
     }
     p = convert_xml_dict(xmlpath)

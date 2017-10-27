@@ -31,9 +31,9 @@ def _fromstring(value):
 def _tostring(value):
     '''Convert value to XML compatible string'''
     if value is True:
-        value = 'true'
+        value = 'TRUE'
     elif value is False:
-        value = 'false'
+        value = 'FALSE'
     return unicode(value)
 
 
@@ -54,7 +54,7 @@ def xml_to_dict(root):
         else:
             result = value.setdefault(child.tag, list())
             result += xml_to_dict(child).values()
-    return dict([(root.tag, value)])
+    return OrderedDict([(root.tag, value)])
 
 
 def dict_to_xml(data, root=None):

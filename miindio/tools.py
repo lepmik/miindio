@@ -6,7 +6,7 @@ import json
 import os
 import numpy as np
 import copy
-import collections
+from collections import Mapping, OrderedDict
 from xmldict import dict_to_xml, xml_to_dict
 
 
@@ -76,7 +76,7 @@ def read_projection_file(filename):
 def prettify_xml(elem):
     """Return a pretty-printed XML string for an Element, string or dict.
     """
-    if isinstance(elem, (dict, collections.OrderedDict)):
+    if isinstance(elem, Mapping):
         string = convert_dict_xml(elem)
     elif isinstance(elem, ET.ElementTree):
         string = ET.tostring(elem, 'utf-8')
@@ -99,8 +99,7 @@ def dump_xml(params, fpathout):
 def deep_update(d, other, strict=False):
     for k, v in other.items():
         d_v = d.get(k)
-        if (isinstance(v, collections.Mapping) and
-            isinstance(d_v, collections.Mapping)):
+        if isinstance(v, Mapping) and isinstance(d_v, Mapping):
             deep_update(d_v, v, strict=strict)
         else:
             if strict:
@@ -115,11 +114,11 @@ def deep_update(d, other, strict=False):
 
 
 def dictify(d):
-    assert isinstance(d, dict)
+    assert isinstance(d, Mapping)
     for k, v in d.items():
         if isinstance(v, list):
-            d[k] = {i: ii for i, ii in enumerate(v)}
-        if isinstance(d[k], dict):
+            d[k] = OrderedDict((i, ii) for i, ii in enumerate(v))
+        if isinstance(d[k], Mapping):
             d[k] = dictify(d[k])
     return d
 
@@ -127,7 +126,7 @@ def dictify(d):
 def listify(d):
     if isdictlist(d):
         d = [d[k] for k in sorted(d.keys())]
-    if isinstance(d, dict):
+    if isinstance(d, Mapping):
         for key, val in d.items():
             d[key] = listify(val)
     if isinstance(d, list):
@@ -138,7 +137,7 @@ def listify(d):
 
 def map_key(dic, key, path=None):
     path = path or []
-    if isinstance(dic, collections.Mapping):
+    if isinstance(dic, Mapping):
         for k, v in dic.items():
             local_path = path[:]
             local_path.append(k)
@@ -181,8 +180,8 @@ def set_params(params, **kwargs):
             old_vals[where.index(True)] = val
             val = old_vals
         if 'content' in old_vals:
-            assert isinstance(old_vals, dict) and len(old_vals.keys()) == 1
-            if isinstance(val, dict):
+            assert isinstance(old_vals, Mapping) and len(old_vals.keys()) == 1
+            if isinstance(val, Mapping):
                 if len(val.keys()) == 1 and 'content' in val:
                     pass
                 else:
@@ -197,13 +196,12 @@ def set_params(params, **kwargs):
 
 
 def isdictlist(val):
-    if isinstance(val, dict):
+    if isinstance(val, Mapping):
         if all(isinstance(k, int) for k in val.keys()):
             idxs = sorted(val.keys())
             if all(k2 == k1 + 1 for k1, k2 in zip(idxs, idxs[1:])):
                 return True
     return False
-
 
 
 def isnumeric(val):
@@ -233,7 +231,7 @@ def pretty_print_params(arg):
     if isinstance(arg, str):
         arg = convert_xml_dict(arg)
     else:
-        assert isinstance(arg, collections.Mapping)
+        assert isinstance(arg, Mapping)
     pprint(json.loads(json.dumps(arg)))
 
 
@@ -241,7 +239,7 @@ def to_json(arg, fname='params.json'):
     if isinstance(arg, str):
         arg = convert_xml_dict(arg)
     else:
-        assert isinstance(arg, collections.Mapping)
+        assert isinstance(arg, Mapping)
     with open(fname, 'w') as outfile:
         json.dump(arg, outfile,
                   sort_keys=True, indent=4)
