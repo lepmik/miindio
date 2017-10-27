@@ -58,7 +58,7 @@ class MiindIO:
             self.MIIND_APPS = os.path.join(MIIND_BUILD_PATH, 'apps')
         assert os.path.exists(self.MIIND_APPS)
 
-    def convert_root(self):
+    def convert_root(self, verbose=False):
         f = ROOT.TFile(self.root_path)
         keys = [key.GetName() for key in list(f.GetListOfKeys())]
         graphs = {key: f.Get(key) for key in keys
@@ -95,15 +95,19 @@ class MiindIO:
                     data[xy][key] = pd.DataFrame(val, index=pd_idx[key]).sort_index()
                 else:
                     data[xy][key] = pd.DataFrame(val).T
-        print 'Extracted %i graphs from root file' % len(data.keys())
+        if verbose:
+            print 'Extracted %i graphs from root file' % len(data.keys())
         return data
 
     @property
     def data(self):
         if not hasattr(self, '_data'):
-            self._data = convert_root()
+            self._data = self.convert_root()
             xmlpath = os.path.join(self.output_directory, self.xml_fname)
             self._data['params'] = convert_xml_dict(xmlpath)
+            if dict_changed(self._data['params'], self.params):
+                print('WARNING: Data parameters and self parameters are ' +
+                          'not equal. Use "data["params"]"')
         return self._data
 
     def set_params(self, **kwargs):
@@ -160,6 +164,7 @@ class MiindIO:
                     raise ValueError
 
     def generate(self, overwrite=False, **kwargs):
+        self.load_xml()
         shutil.copyfile(self.xml_path, self.xml_path + '.bak')
         self.set_params(**kwargs)
         self.dump_xml()
