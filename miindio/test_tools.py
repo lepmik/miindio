@@ -47,20 +47,18 @@ def test_read_write_dict_equal():
     assert DictDiffer(p, q).changed() == set()
 
 
-def test_read_write_string_equal():
-    from tools import convert_xml_dict, dump_xml, to_json, DictDiffer
-    p = convert_xml_dict(xmlpath)
-    dump_xml(p, testpath + '.xml')
-    q_string = ET.tostring(ET.parse(testpath + '.xml').getroot())
-    p_string = ET.tostring(ET.parse(xmlpath).getroot())
-    assert q_string == p_string
+# def test_read_write_string_equal():
+#     from tools import convert_xml_dict, dump_xml, to_json, DictDiffer
+#     p = convert_xml_dict(xmlpath)
+#     dump_xml(p, testpath + '.xml')
+#     q_string = ET.tostring(ET.parse(testpath + '.xml').getroot())
+#     p_string = ET.tostring(ET.parse(xmlpath).getroot())
+#     assert q_string == p_string
 
 
-def test_set_content():
+def test_set_value_no_content():
     from tools import set_params, convert_xml_dict, DictDiffer
-    params = {
-        't_end': .1,
-    }
+    params = {'t_end': .1}
     p = convert_xml_dict(xmlpath)
     q = copy.deepcopy(p)
     set_params(q, **params)
@@ -69,7 +67,30 @@ def test_set_content():
     assert p['Simulation']['SimulationRunParameter']['t_end']['content'] == 1
 
 
-def test_change_list_params1():
+def test_set_value_no_content_deep():
+    from tools import set_params, convert_xml_dict
+    params = {
+        'Algorithm': {
+            2: {'expression': 1.}
+        }
+    }
+    p = convert_xml_dict(xmlpath)
+    set_params(p, **params)
+    base = p['Simulation']['Algorithms']['Algorithm'][2]
+    assert base['expression']['content'] == 1.
+    assert base['type'] == "RateFunctor"
+
+
+def test_set_no_content_deep_string():
+    from tools import set_params, convert_xml_dict
+    p = convert_xml_dict(xmlpath)
+    set_params(p, Algorithm='2/expression/1.')
+    base = p['Simulation']['Algorithms']['Algorithm'][2]
+    assert base['expression']['content'] == 1.
+    assert base['type'] == "RateFunctor"
+
+
+def test_change_params_dict():
     from tools import set_params, convert_xml_dict
     params = {
         'Connection': {
@@ -84,7 +105,7 @@ def test_change_list_params1():
     assert base['Out'] == 'adex I'
 
 
-def test_change_list_params2():
+def test_change_params_dict2():
     from tools import set_params, convert_xml_dict
     params = {
         'Algorithm': {
@@ -98,13 +119,31 @@ def test_change_list_params2():
     assert base['type'] == "RateFunctor"
 
 
-def test_change_list_params_no():
+def test_change_params_string():
     from tools import set_params, convert_xml_dict
-    params = {
-        'Algorithm': {
-            2: {'expression': 1}
-        }
-    }
+    p = convert_xml_dict(xmlpath)
+    set_params(p, Algorithm='2/expression/content/1.')
+    base = p['Simulation']['Algorithms']['Algorithm'][2]
+    assert base['expression']['content'] == 1.
+    assert base['type'] == "RateFunctor"
+
+
+def test_set_val_new_type():
+    from tools import set_params, convert_xml_dict
     p = convert_xml_dict(xmlpath)
     with pytest.raises(TypeError):
-        set_params(p, **params)
+        set_params(p, Algorithm='2/expression/1')
+
+
+def test_set_val_new_structure():
+    from tools import set_params, convert_xml_dict
+    p = convert_xml_dict(xmlpath)
+    with pytest.raises(TypeError):
+        set_params(p, Algorithm='2/1')
+
+
+def test_set_attr():
+    from tools import set_params, convert_xml_dict
+    p = convert_xml_dict(xmlpath)
+    set_params(p, Node='0/algorithm/yoyo')
+    assert p['Simulation']['Nodes']['Node'][0]['algorithm'] == 'yoyo'

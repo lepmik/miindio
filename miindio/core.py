@@ -37,8 +37,9 @@ class MiindIO:
         self.mesh_basename = os.path.splitext(self.model_fname)[0]
         self.mesh_fname = self.mesh_basename + '.mesh'
         self.mesh_pathname = os.path.join(self.xml_location, self.mesh_fname)
-        self.WITH_STATE = self.params['Simulation']['SimulationIO']['WithState']
-        self.simulation_name = self.params['Simulation']['SimulationIO']['SimulationName']
+        simio = self.params['Simulation']['SimulationIO']
+        self.WITH_STATE = simio['WithState']['content']
+        self.simulation_name = simio['SimulationName']['content']
         self.root_path = os.path.join(self.output_directory,
                                       self.simulation_name + '_0.root')
         if MIIND_BUILD_PATH is None:

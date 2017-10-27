@@ -7,7 +7,7 @@ import os
 import numpy as np
 import copy
 from collections import Mapping, OrderedDict
-from xmldict import dict_to_xml, xml_to_dict
+from xmldict import dict_to_xml, xml_to_dict, _fromstring
 
 
 class cd:
@@ -136,7 +136,7 @@ def listify(d):
 
 
 def map_key(dic, key, path=None):
-    path = path or []
+    path = path if path is not None else []
     if isinstance(dic, Mapping):
         for k, v in dic.items():
             local_path = path[:]
@@ -149,6 +149,18 @@ def map_key(dic, key, path=None):
         yield path, dic
 
 
+def map_dict(dic, path=None):
+    path = path if path is not None else []
+    if isinstance(dic, Mapping):
+        for k, v in dic.items():
+            local_path = path[:]
+            local_path.append(k)
+            for b in map_dict(v, local_path):
+                 yield b
+    else:
+        yield path, dic
+
+
 def pack_list_dict(parts):
     if len(parts) == 1:
         return parts[0]
@@ -157,38 +169,53 @@ def pack_list_dict(parts):
     return parts
 
 
+def ispath(val):
+    tpath = os.path.abspath(os.path.expanduser(val))
+    if not os.path.exists(tpath) and not os.path.isdir(tpath):
+        return False
+    else:
+        return True
+
+
+def get_from_dict(d, l):
+    from functools import reduce
+    import operator
+    return reduce(operator.getitem, l, d)
+
+
 def set_params(params, **kwargs):
     if not kwargs:
         return
     dictify(params)
     for key, val in kwargs.items():
-        mapping = list(map_key(params, key))
-        if len(mapping) == 0:
+        if isinstance(val, (str, unicode)):
+            if '/' in val:
+                # make sure its not a path
+                if not ispath(val):
+                    tval = [_fromstring(v) for v in val.split('/')]
+                    val = pack_list_dict(tval)
+        old_mapping = list(map_key(params, key))
+        if len(old_mapping) == 0:
             raise ValueError('Unable to map instance of "{}", '.format(key))
-        if len(mapping) > 1:
-            print(mapping)
+        if len(old_mapping) > 1:
+            print(old_mapping)
             raise ValueError('Found multiple instances of "{}", '.format(key) +
                              'mapping must be unique')
-        path, old_vals = mapping[0]
-        if isdictlist(old_vals) and not isinstance(val, list) and not isdictlist(val):
-            if all(set(val.keys()) != set(ov.keys()) for ov in old_vals):
-                raise KeyError('No new keys allowed.')
-            where = [DictDiffer(old_val, val).changed() == set('content')
-                     for old_val in old_vals]
-            if sum(where) != 1:
-                raise ValueError('Unable to find matching "parameter dict".')
-            old_vals[where.index(True)] = val
-            val = old_vals
-        if 'content' in old_vals:
-            assert isinstance(old_vals, Mapping) and len(old_vals.keys()) == 1
-            if isinstance(val, Mapping):
-                if len(val.keys()) == 1 and 'content' in val:
-                    pass
-                else:
-                    raise ValueError('Unable to understand value {}'.format(val))
-            old_vals['content'] = val
-            val = old_vals
-
+        path, old_val = old_mapping[0]
+        if isinstance(val, Mapping):
+            new_mapping = list(map_dict(val))
+            assert len(new_mapping) == 1
+            val_path, val_val = new_mapping[0]
+            if not val_path[-1] == 'content':
+                old_deep_val = get_from_dict(old_val, val_path)
+                if isinstance(old_deep_val, Mapping):
+                    if 'content' in old_deep_val:
+                        val_path.append('content')
+            val_path.append(val_val)
+            val = pack_list_dict(val_path)
+        elif 'content' in old_val:
+            old_val['content'] = val
+            val = old_val
         path.append(val)
         packed_list = pack_list_dict(path)
         deep_update(params, packed_list, strict=True)
