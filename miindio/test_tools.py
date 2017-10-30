@@ -147,3 +147,15 @@ def test_set_attr():
     p = convert_xml_dict(xmlpath)
     set_params(p, Node='0/algorithm/yoyo')
     assert p['Simulation']['Nodes']['Node'][0]['algorithm'] == 'yoyo'
+
+
+def test_set_multiple_values():
+    from tools import set_params, convert_xml_dict, dump_xml
+    params = {'Algorithm': '2/expression/2000.',
+              'Connection': {2: '50 -1 1',
+                             3: '200 1 1'}}
+    p = convert_xml_dict(xmlpath)
+    set_params(p, **params)
+    dump_xml(p, testpath + '.xml')
+    base = p['Simulation']['Algorithms']['Algorithm'][2]
+    assert base['expression']['content'] == 2000.

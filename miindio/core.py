@@ -168,7 +168,7 @@ class MiindIO:
         shutil.copyfile(self.xml_path, self.xml_path + '.bak')
         self.set_params(**kwargs)
         self.dump_xml()
-        if os.path.exists(self.output_directory) and overwrite:
+        if os.path.exists(self.output_directory):
             shutil.rmtree(self.output_directory)
         with cd(self.xml_location):
             directories.add_executable(self.submit_name, [self.xml_path], '')

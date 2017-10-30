@@ -175,23 +175,21 @@ def set_params(params, **kwargs):
                              'mapping must be unique')
         path, old_val = old_mapping[0]
         if isinstance(val, Mapping):
-            new_mapping = list(map_dict(val))
-            assert len(new_mapping) == 1
-            val_path, val_val = new_mapping[0]
-            if not val_path[-1] == 'content':
-                old_deep_val = get_from_dict(old_val, val_path)
-                if isinstance(old_deep_val, Mapping):
-                    if 'content' in old_deep_val:
-                        val_path.append('content')
-            val_path.append(val_val)
-            val = pack_list_dict(val_path)
+            for val_path, val_val in map_dict(val):
+                if not val_path[-1] == 'content':
+                    old_deep_val = get_from_dict(old_val, val_path)
+                    if isinstance(old_deep_val, Mapping):
+                        if 'content' in old_deep_val:
+                            val_path.append('content')
+                val_path.append(val_val)
+                deep_update(val, pack_list_dict(val_path))
         elif 'content' in old_val:
             old_val['content'] = val
             val = old_val
         path.append(val)
         packed_list = pack_list_dict(path)
         deep_update(params, packed_list, strict=True)
-        listify(params)
+    listify(params)
 
 
 def isdictlist(val):
