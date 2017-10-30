@@ -163,7 +163,7 @@ class MiindIO:
                     print(density[ode_sys.map(i,j)])
                     raise ValueError
 
-    def generate(self, overwrite=False, **kwargs):
+    def generate(self, **kwargs):
         self.load_xml()
         shutil.copyfile(self.xml_path, self.xml_path + '.bak')
         self.set_params(**kwargs)
