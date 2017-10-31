@@ -26,8 +26,8 @@ class MiindIO:
         self.xml_location, self.xml_fname = os.path.split(self.xml_path)
         xml_base_fname, _ = os.path.splitext(self.xml_fname)
         self.submit_name = submit_name or xml_base_fname
-        self.output_directory = os.path.join(self.xml_location, submit_name,
-                                             xml_base_fname)
+        self.output_directory = os.path.join(
+            self.xml_location, self.submit_name, xml_base_fname)
         self.miind_executable = xml_base_fname
         self.load_xml()
         algorithm = self.params['Simulation']['Algorithms']['Algorithm']
