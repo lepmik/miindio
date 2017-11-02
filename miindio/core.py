@@ -30,13 +30,13 @@ class MiindIO:
             self.xml_location, self.submit_name, xml_base_fname)
         self.miind_executable = xml_base_fname
         self.load_xml()
-        algorithm = self.params['Simulation']['Algorithms']['Algorithm']
-        mesh_algo = [d for d in algorithm if d['type'] == 'MeshAlgorithm'][0]
-        self.model_fname = os.path.split(mesh_algo['modelfile'])[-1]
-        self.mat_fnames = mesh_algo['MatrixFile']
-        self.mesh_basename = os.path.splitext(self.model_fname)[0]
-        self.mesh_fname = self.mesh_basename + '.mesh'
-        self.mesh_pathname = os.path.join(self.xml_location, self.mesh_fname)
+        # algorithm = self.params['Simulation']['Algorithms']['Algorithm']
+        # mesh_algo = [d for d in algorithm if d['type'] == 'MeshAlgorithm'][0]
+        # self.model_fname = os.path.split(mesh_algo['modelfile'])[-1]
+        # self.mat_fnames = mesh_algo['MatrixFile']
+        # self.mesh_basename = os.path.splitext(self.model_fname)[0]
+        # self.mesh_fname = self.mesh_basename + '.mesh'
+        # self.mesh_pathname = os.path.join(self.xml_location, self.mesh_fname)
         simio = self.params['Simulation']['SimulationIO']
         self.WITH_STATE = simio['WithState']['content']
         self.simulation_name = simio['SimulationName']['content']
@@ -123,45 +123,73 @@ class MiindIO:
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
 
-    def convert_mesh(self, save=True):
+    def get_marginals(self, basename, timestep=None, time=None):
         if not self.WITH_STATE:
             raise ValueError('State is not saved.')
-        if not os.path.exists(self.mesh_fname):
-            raise ValueError('Need ".mesh" file.')
+        modelname = basename + '.model'
+        modelpath = os.path.join(self.xml_location, modelname)
+        assert os.path.exists(modelpath)
+        meshpath = extract_mesh(modelpath)
+        meshname = basename + '.mesh.bak'
         proj_pathname = os.path.join(
-            self.xml_location, self.mesh_basename + '.projection')
+            self.xml_location, basename + '.projection')
         if not os.path.exists(proj_pathname):
             projection_exe = os.path.join(self.MIIND_APPS, 'Projection',
                                           'Projection')
-            subprocess.call([projection_exe, self.mesh_pathname],
-                            cwd=self.xml_location)
-            vmin, vmax, vn, wmin, wmax, wn = input('Input "vmin, vmax, vn, wmin, wmax, wn"')
-            subprocess.call([projection_exe, self.mesh_pathname, vmin, vmax, vn, wmin, wmax, wn], cwd=self.xml_location)
-        projection = read_projection_file(proj_pathname)
-        return projection
+            out = subprocess.check_output([projection_exe, meshname],
+                                          cwd=self.xml_location)
+            print(out)
+            inp_txt = 'Input "vmin, vmax, vn, wmin, wmax, wn"'
+            vmin, vmax, vn, wmin, wmax, wn = input(inp_txt).split(' ')
+            subprocess.call([projection_exe, meshname, vmin, vmax,
+                             vn, wmin, wmax, wn], cwd=self.xml_location)
+        projection = read_projection(proj_pathname)
         fnames = glob.glob(os.path.join(self.output_directory,
-                                        self.model_fname + '_mesh', 'mesh*'))
+                                        modelname + '_mesh', 'mesh*'))
 
-        base = os.path.join(self.output_directory, self.model_fname.split('.')[0])
         m = mesh.Mesh(None)
-        m.FromXML(base + '.mesh.bak')
+        m.FromXML(meshpath)
         ode_sys = Ode2DSystem(m, [], [])
 
-        def get_mesh_time(path):
+        def get_density_time(path):
             fname = os.path.split(path)[-1]
             return float(fname.split('_')[2])
-        densities = []
-        times = []
-        for fname in sorted(fnames, key=get_mesh_time):
-            density = read_mesh_file(fname)
-            times.append(get_mesh_time(fname))
-            densities.append(density)
-            for i, cells in enumerate(m.cells):
-                for j, cell in enumerate(cells):
-                    print(cell)
-                    print(ode_sys.map(i,j))
-                    print(density[ode_sys.map(i,j)])
-                    raise ValueError
+
+        fnames = sorted(fnames, key=get_density_time)
+        times = [get_density_time(f) for f in fnames]
+        if timestep is not None:
+            assert time is None
+            fnames = fnames[::timestep]
+            times = times[::timestep]
+        if time is not None:
+            assert timestep is None
+            if time == 'end':
+                time = times[-1]
+            elif not isinstance(time, float):
+                raise TypeError('"time" must be a float or the string "end"')
+            fnames = [fnames[times.index(time)]]
+            times = [time]
+        vs = np.zeros((len(fnames), projection['V_limit']['N_V']))
+        ws = np.zeros((len(fnames), projection['W_limit']['N_W']))
+        for ii, fname in enumerate(fnames):
+            density = read_density(fname)
+            for idx, (i, j) in enumerate(projection['ij']):
+                v = projection['vbins'][idx]
+                w = projection['wbins'][idx]
+                for var, container in zip([v, w], [vs, ws]):
+                    for marginalization in var.split(';'):
+                        if len(marginalization) == 0:
+                            continue
+                        jj, dd = marginalization.split(',')
+                        jj, dd = int(jj), float(dd)
+                        container[ii, jj] = density[ode_sys.map(i,j)] * dd
+        bins_v = np.linspace(projection['V_limit']['V_min'],
+                             projection['V_limit']['V_max'],
+                             projection['V_limit']['N_V'])
+        bins_w = np.linspace(projection['W_limit']['W_min'],
+                             projection['W_limit']['W_max'],
+                             projection['W_limit']['N_W'])
+        return vs, bins_v, ws, bins_w, times
 
     def generate(self, **kwargs):
         self.load_xml()
@@ -187,4 +215,4 @@ class MiindIO:
 
 if __name__ == '__main__':
     io = MiindIO(xml_path='cond.xml', submit_name='cond')
-    io.convert_mesh()
+    io.get_marginals()

@@ -29,8 +29,8 @@ def dict_changed(d1, d2):
     return set(o for o in intersect if d2[o] != d1[o])
 
 
-def read_mesh_file(filename):
-    f = open(filename)
+def read_density(filename):
+    f = open(filename, 'r')
     line = f.readline()
     data = np.array([float(x) for x in line.split()[2::3]])
     if any(data < 0):
@@ -38,11 +38,35 @@ def read_mesh_file(filename):
     return np.array(data)
 
 
-def read_projection_file(filename):
-    root = ET.parse(filename).getroot()
-    odict = xmljson.yahoo.data(root)
-    # return json.loads(json.dumps(odict))
-    return root
+def read_projection(filename):
+    proj = xml_to_dict(ET.parse(filename).getroot(),
+                       text_content=None)
+    cells_ij = []
+    vbins, wbins = [], []
+    with open(filename, 'r') as f:
+        read = False
+        for l in f:
+            l = l.strip()
+            if l == '</W_limit>':
+                read = True
+                continue
+            if read:
+                if l == '</Projection>':
+                    continue
+                s1 = l.split(',')
+                s2 = s1[1].split(';')
+                cells_ij.append((int(s1[0]), int(s2[0])))
+                vbins.append(remove_txt(l.split('vbins')[1], '<', '>', '/'))
+                wbins.append(remove_txt(l.split('wbins')[1], '<', '>', '/'))
+    assert proj['Projection']['vbins'] == vbins
+    assert proj['Projection']['wbins'] == wbins
+    return {
+        'vbins': vbins,
+        'wbins': wbins,
+        'V_limit': proj['Projection']['V_limit'],
+        'W_limit': proj['Projection']['W_limit'],
+        'ij': cells_ij
+    }
 
 
 def prettify_xml(elem):
@@ -240,3 +264,15 @@ def to_json(arg, fname='params.json'):
     with open(fname, 'w') as outfile:
         json.dump(arg, outfile,
                   sort_keys=True, indent=4)
+
+
+def extract_mesh(modelpath):
+    tree = ET.parse(modelpath)
+    root = tree.getroot()
+    for child in root:
+        if child.tag == 'Mesh':
+            meshstr=ET.tostring(child)
+    meshpath = modelpath.replace('.model', '.mesh.bak')
+    with open(meshpath,'w') as fmesh:
+        fmesh.write(meshstr)
+    return meshpath

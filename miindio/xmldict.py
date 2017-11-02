@@ -5,8 +5,6 @@ This module is taken from the xmljson package
 from collections import OrderedDict, Counter
 from xml.etree.ElementTree import Element
 
-text_content = 'content'
-
 
 def _fromstring(value):
    '''Convert XML string value to None, boolean, int or float'''
@@ -37,27 +35,29 @@ def _tostring(value):
     return unicode(value)
 
 
-def xml_to_dict(root):
+def xml_to_dict(root, text_content='content'):
     '''Convert etree.Element into a dictionary'''
     value = OrderedDict()
     children = [node for node in root if isinstance(node.tag, basestring)]
     for attr, attrval in root.attrib.items():
         value[attr] = _fromstring(attrval)
-    if root.text and text_content is not None:
+    if root.text:
         text = root.text.strip()
-        if text:
+        if text and text_content is not None:
             value[text_content] = _fromstring(text)
+        elif text and text_content is None:
+            value = _fromstring(text)
     count = Counter(child.tag for child in children)
     for child in children:
         if count[child.tag] == 1:
-           value.update(xml_to_dict(child))
+           value.update(xml_to_dict(child, text_content=text_content))
         else:
             result = value.setdefault(child.tag, list())
-            result += xml_to_dict(child).values()
+            result += xml_to_dict(child, text_content=text_content).values()
     return OrderedDict([(root.tag, value)])
 
 
-def dict_to_xml(data, root=None):
+def dict_to_xml(data, root=None, text_content='content'):
     '''Convert data structure into a list of etree.Element'''
     result = list() if root is None else root
     if isinstance(data, dict):
@@ -79,7 +79,7 @@ def dict_to_xml(data, root=None):
             for value in values:
                 elem = Element(key)
                 result.append(elem)
-                dict_to_xml(value, root=elem)
+                dict_to_xml(value, root=elem, text_content=text_content)
     else:
         if text_content is None and root is not None:
             root.text = _tostring(data)
