@@ -8,8 +8,7 @@ long_description = open("README.md").read()
 
 install_requires = [
     'numpy>=1.9',
-    'pandas>=0.14.1'
-    'xmljson']
+    'pandas>=0.14.1']
 # also requires ROOT and MIIND
 extras_require = {
     'testing': ['pytest'],

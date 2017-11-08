@@ -1,4 +1,3 @@
-import xmljson
 import xml.etree.ElementTree as ET
 import xml.dom.minidom as minidom
 from pprint import pprint
