@@ -176,13 +176,16 @@ class MiindIO:
             for idx, (i, j) in enumerate(projection['ij']):
                 v = projection['vbins'][idx]
                 w = projection['wbins'][idx]
+                cell_dens = density[ode_sys.map(i,j)]
+                if cell_dens == 0:
+                    continue
                 for var, container in zip([v, w], [vs, ws]):
                     for marginalization in var.split(';'):
                         if len(marginalization) == 0:
                             continue
                         jj, dd = marginalization.split(',')
                         jj, dd = int(jj), float(dd)
-                        container[ii, jj] = density[ode_sys.map(i,j)] * dd
+                        container[ii, jj] = cell_dens * dd
         bins_v = np.linspace(projection['V_limit']['V_min'],
                              projection['V_limit']['V_max'],
                              projection['V_limit']['N_V'])
