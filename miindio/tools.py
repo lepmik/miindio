@@ -37,37 +37,6 @@ def read_density(filename):
     return np.array(data)
 
 
-def read_projection(filename):
-    proj = xml_to_dict(ET.parse(filename).getroot(),
-                       text_content=None)
-    cells_ij = []
-    vbins, wbins = [], []
-    with open(filename, 'r') as f:
-        read = False
-        for l in f:
-            l = l.strip()
-            if l == '</W_limit>':
-                read = True
-                continue
-            if read:
-                if l == '</Projection>':
-                    continue
-                s1 = l.split(',')
-                s2 = s1[1].split(';')
-                cells_ij.append((int(s1[0]), int(s2[0])))
-                vbins.append(remove_txt(l.split('vbins')[1], '<', '>', '/'))
-                wbins.append(remove_txt(l.split('wbins')[1], '<', '>', '/'))
-    assert proj['Projection']['vbins'] == vbins
-    assert proj['Projection']['wbins'] == wbins
-    return {
-        'vbins': vbins,
-        'wbins': wbins,
-        'V_limit': proj['Projection']['V_limit'],
-        'W_limit': proj['Projection']['W_limit'],
-        'ij': cells_ij
-    }
-
-
 def prettify_xml(elem):
     """Return a pretty-printed XML string for an Element, string or dict.
     """
@@ -172,10 +141,10 @@ def ispath(val):
         return True
 
 
-def get_from_dict(d, l):
+def get_from_dict(dct, lst):
     from functools import reduce
     import operator
-    return reduce(operator.getitem, l, d)
+    return reduce(operator.getitem, lst, dct)
 
 
 def set_params(params, **kwargs):

@@ -65,9 +65,7 @@ class MiindIO:
                   if isinstance(f.Get(key), ROOT.TGraph)}
         rdata = {}
         for key, g in graphs.iteritems():
-            x = g.GetX()
-            y = g.GetY()
-            N = g.GetN()
+            x, y, N = g.GetX(), g.GetY(), g.GetN()
             x.SetSize(N)
             y.SetSize(N)
             xa = np.array(x, copy=True)
@@ -92,7 +90,8 @@ class MiindIO:
             # Convert to pandas rdataFrame
             for key, val in data[xy].iteritems():
                 if key in pd_idx:
-                    data[xy][key] = pd.DataFrame(val, index=pd_idx[key]).sort_index()
+                    data[xy][key] = pd.DataFrame(val, index=pd_idx[key])
+                    data[xy][key].sort_index()
                 else:
                     data[xy][key] = pd.DataFrame(val).T
         if verbose:
@@ -123,27 +122,21 @@ class MiindIO:
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
 
-    def get_marginals(self, basename, timestep=None, time=None):
+    def get_marginal_density(self, basename, vn=100, wn=100, timestep=None,
+                             time=None):
         if not self.WITH_STATE:
             raise ValueError('State is not saved.')
+        fname = os.path.join(self.output_directory, basename +
+                             '_marginal_density.npz')
+        if hasattr(self, '_marginal_density_' + basename):
+            return getattr(self, '_marginal_density_' + basename)
+        if os.path.exists(fname):
+            return np.load(fname)['data'][()]
         modelname = basename + '.model'
         modelpath = os.path.join(self.xml_location, modelname)
         assert os.path.exists(modelpath)
         meshpath = extract_mesh(modelpath)
-        meshname = basename + '.mesh.bak'
-        proj_pathname = os.path.join(
-            self.xml_location, basename + '.projection')
-        if not os.path.exists(proj_pathname):
-            projection_exe = os.path.join(self.MIIND_APPS, 'Projection',
-                                          'Projection')
-            out = subprocess.check_output([projection_exe, meshname],
-                                          cwd=self.xml_location)
-            print(out)
-            inp_txt = 'Input "vmin, vmax, vn, wmin, wmax, wn"'
-            vmin, vmax, vn, wmin, wmax, wn = input(inp_txt).split(' ')
-            subprocess.call([projection_exe, meshname, vmin, vmax,
-                             vn, wmin, wmax, wn], cwd=self.xml_location)
-        projection = read_projection(proj_pathname)
+        projection = self.read_projection(basename, vn, wn)
         fnames = glob.glob(os.path.join(self.output_directory,
                                         modelname + '_mesh', 'mesh*'))
 
@@ -169,14 +162,14 @@ class MiindIO:
                 raise TypeError('"time" must be a float or the string "end"')
             fnames = [fnames[times.index(time)]]
             times = [time]
-        vs = np.zeros((len(fnames), projection['V_limit']['N_V']))
-        ws = np.zeros((len(fnames), projection['W_limit']['N_W']))
+        vs = np.zeros((len(fnames), projection['N_V']))
+        ws = np.zeros((len(fnames), projection['N_W']))
         for ii, fname in enumerate(fnames):
             density = read_density(fname)
-            for idx, (i, j) in enumerate(projection['ij']):
+            for idx, (i, j) in enumerate(projection['coords']):
                 v = projection['vbins'][idx]
                 w = projection['wbins'][idx]
-                cell_dens = density[ode_sys.map(i,j)]
+                cell_dens = density[ode_sys.map(i, j)]
                 if cell_dens == 0:
                     continue
                 for var, container in zip([v, w], [vs, ws]):
@@ -185,14 +178,88 @@ class MiindIO:
                             continue
                         jj, dd = marginalization.split(',')
                         jj, dd = int(jj), float(dd)
-                        container[ii, jj] = cell_dens * dd
-        bins_v = np.linspace(projection['V_limit']['V_min'],
-                             projection['V_limit']['V_max'],
-                             projection['V_limit']['N_V'])
-        bins_w = np.linspace(projection['W_limit']['W_min'],
-                             projection['W_limit']['W_max'],
-                             projection['W_limit']['N_W'])
-        return vs, bins_v, ws, bins_w, times
+                        container[ii, jj] += cell_dens * dd
+        bins_v = np.linspace(projection['V_min'],
+                             projection['V_max'],
+                             projection['N_V'])
+        bins_w = np.linspace(projection['W_min'],
+                             projection['W_max'],
+                             projection['N_W'])
+        data = {'v': vs, 'w': ws, 'bins_v': bins_v,
+                'bins_w': bins_w, 'times': times}
+        setattr(self, '_marginal_density_' + basename, data)
+        np.savez(fname, data=data)
+        return data
+
+    def read_projection(self, basename, vn, wn):
+        proj_pathname = os.path.join(
+            self.xml_location, basename + '.projection')
+        if not os.path.exists(proj_pathname):
+            print('No projection file found, generating...')
+            projection_exe = os.path.join(self.MIIND_APPS, 'Projection',
+                                          'Projection')
+            out = subprocess.check_output(
+                [projection_exe, basename + '.mesh.bak'],
+                 cwd=self.xml_location)
+            vmax, wmax = np.ceil(np.array(out.split('\n')[3].split(' ')[2:],
+                                          dtype=float)).astype(int)
+            vmin, wmin = np.floor(np.array(out.split('\n')[4].split(' ')[2:],
+                                          dtype=float)).astype(int)
+            cmd = [projection_exe, basename + '.mesh.bak', vmin, vmax,
+                   vn, wmin, wmax, wn]
+            subprocess.call([str(c) for c in cmd], cwd=self.xml_location)
+        proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
+                           text_content=None)
+        # TODO reading below not necessary, when marc makes a proper xml
+        cells_ij = []
+        vbins, wbins = [], []
+        with open(proj_pathname, 'r') as f:
+            read = False
+            for l in f:
+                l = l.strip()
+                if l == '</W_limit>':
+                    read = True
+                    continue
+                if read:
+                    if l == '</Projection>':
+                        continue
+                    s1 = l.split(',')
+                    s2 = s1[1].split(';')
+                    cells_ij.append((int(s1[0]), int(s2[0])))
+                    vbins.append(remove_txt(l.split('vbins')[1], '<', '>', '/'))
+                    wbins.append(remove_txt(l.split('wbins')[1], '<', '>', '/'))
+        assert proj['Projection']['vbins'] == vbins
+        assert proj['Projection']['wbins'] == wbins
+        return {
+            'vbins': vbins,
+            'wbins': wbins,
+            'V_min': proj['Projection']['V_limit']['V_min'],
+            'V_max': proj['Projection']['V_limit']['V_max'],
+            'N_V': proj['Projection']['V_limit']['N_V'],
+            'W_min': proj['Projection']['W_limit']['W_min'],
+            'W_max': proj['Projection']['W_limit']['W_max'],
+            'N_W': proj['Projection']['W_limit']['N_W'],
+            'coords': cells_ij
+        }
+
+    def plot_marginal_density(self, basename, *args):
+        import matplotlib.pyplot as plt
+        data = self.get_marginal_density(basename, *args)
+        for ii in range(len(data['times'])):
+            fig, axs = plt.subplots(1, 2)
+            params = {
+                'ax': axs,
+                'dens': [data['v'], data['w']],
+                'bins': [data['bins_v'], data['bins_w']]
+            }
+            params = [{k: v[i] for k, v in params.items()}
+                      for i in range(len(params['ax']))]
+            plt.suptitle('time = {}'.format(data['times'][ii]))
+            for p in params:
+                p['ax'].plot(p['bins'], p['dens'][ii, :])
+                fig.savefig(os.path.join(self.output_directory,
+                            'marginal_density_{}.png'.format(ii)))
+                plt.close(fig)
 
     def generate(self, **kwargs):
         self.load_xml()
