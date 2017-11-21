@@ -234,13 +234,15 @@ def to_json(arg, fname='params.json'):
                   sort_keys=True, indent=4)
 
 
-def extract_mesh(modelpath):
-    tree = ET.parse(modelpath)
-    root = tree.getroot()
-    for child in root:
-        if child.tag == 'Mesh':
-            meshstr=ET.tostring(child)
+def extract_mesh(modelpath, overwrite=False):
     meshpath = modelpath.replace('.model', '.mesh.bak')
-    with open(meshpath,'w') as fmesh:
-        fmesh.write(meshstr)
+    if not os.path.exists(meshpath) or overwrite:
+        print('No mesh, generates from ".model" file..')
+        tree = ET.parse(modelpath)
+        root = tree.getroot()
+        for child in root:
+            if child.tag == 'Mesh':
+                meshstr=ET.tostring(child)
+        with open(meshpath,'w') as fmesh:
+            fmesh.write(meshstr)
     return meshpath

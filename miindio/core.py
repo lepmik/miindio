@@ -17,7 +17,7 @@ from ode2dsystem import Ode2DSystem
 
 class MiindIO:
     def __init__(self, xml_path, submit_name=None,
-                 MIIND_BUILD_PATH=None):
+                 MIIND_BUILD_PATH=None, **kwargs):
         self.xml_path = os.path.abspath(xml_path)
         assert os.path.exists(self.xml_path)
         if MIIND_BUILD_PATH is not None:
@@ -29,19 +29,16 @@ class MiindIO:
         self.output_directory = os.path.join(
             self.xml_location, self.submit_name, xml_base_fname)
         self.miind_executable = xml_base_fname
+        # load current
         self.load_xml()
-        # algorithm = self.params['Simulation']['Algorithms']['Algorithm']
-        # mesh_algo = [d for d in algorithm if d['type'] == 'MeshAlgorithm'][0]
-        # self.model_fname = os.path.split(mesh_algo['modelfile'])[-1]
-        # self.mat_fnames = mesh_algo['MatrixFile']
-        # self.mesh_basename = os.path.splitext(self.model_fname)[0]
-        # self.mesh_fname = self.mesh_basename + '.mesh'
-        # self.mesh_pathname = os.path.join(self.xml_location, self.mesh_fname)
+        shutil.copyfile(self.xml_path, self.xml_path + '.bak')
+        # set new params and generate self.params
+        self.set_params(**kwargs)
+        # dump so miind will use new params
+        self.dump_xml()
         simio = self.params['Simulation']['SimulationIO']
         self.WITH_STATE = simio['WithState']['content']
         self.simulation_name = simio['SimulationName']['content']
-        self.root_path = os.path.join(self.output_directory,
-                                      self.simulation_name + '_0.root')
         if MIIND_BUILD_PATH is None:
             srch = 'miind/build'
             path = [n for n in os.environ["PATH"].split(':') if srch in n]
@@ -58,8 +55,16 @@ class MiindIO:
             self.MIIND_APPS = os.path.join(MIIND_BUILD_PATH, 'apps')
         assert os.path.exists(self.MIIND_APPS)
 
-    def convert_root(self, verbose=False):
-        f = ROOT.TFile(self.root_path)
+    def get_rates(self):
+        root_path = os.path.join(self.output_directory,
+                                 self.simulation_name + '_0.root')
+        fnameout = os.path.join(self.output_directory,
+                                 self.simulation_name + '_rates.npz')
+        if hasattr(self, '_rates'):
+            return self._rates
+        if os.path.exists(fnameout):
+            return np.load(fnameout)['data'][()]
+        f = ROOT.TFile(root_path)
         keys = [key.GetName() for key in list(f.GetListOfKeys())]
         graphs = {key: f.Get(key) for key in keys
                   if isinstance(f.Get(key), ROOT.TGraph)}
@@ -72,44 +77,39 @@ class MiindIO:
             ya = np.array(y, copy=True)
             rdata[key] = np.hstack([xa.reshape(len(xa), 1),
                                     ya.reshape(len(ya), 1)])
-        data = {'x': {'_'.join(key.split('_')[:2]): list() for key in rdata.keys()},
+        _rates = {'x': {'_'.join(key.split('_')[:2]): list() for key in rdata.keys()},
                 'y': {'_'.join(key.split('_')[:2]): list() for key in rdata.keys()}}
         keys = ['x', 'y']
         for i, xy in enumerate(keys):
-            pd_idx = {'_'.join(key.split('_')[:2]): list() for key in rdata.keys()
-                      if len(key.split('_')) == 3}
             for key, val in rdata.iteritems():
                 sp = key.split('_')
                 skey = '_'.join(key.split('_')[:2])
                 if len(sp) == 3:
-                    sval = float(sp[-1])
-                    pd_idx[skey].append(sval)
-                    data[xy][skey].append(val[:,i])
+                    continue
                 else:
-                    data[xy][skey].append(val[:,i])
-            # Convert to pandas rdataFrame
-            for key, val in data[xy].iteritems():
-                if key in pd_idx:
-                    data[xy][key] = pd.DataFrame(val, index=pd_idx[key])
-                    data[xy][key].sort_index()
-                else:
-                    data[xy][key] = pd.DataFrame(val).T
-        if verbose:
-            print 'Extracted %i graphs from root file' % len(data.keys())
-        return data
+                    _rates[xy][skey].append(val[:, i])
+            # Convert to np array
+            for key, val in _rates[xy].iteritems():
+                _rates[xy][key] = np.array(val).flatten()[2::2] # TODO HACK TODO why every other here??? bug in miind??
+        print 'Extracted %i graphs from root file' % len(_rates['x'].keys())
+        self._rates = _rates
+        np.savez(fnameout, data=_rates)
+        return _rates
 
     @property
-    def data(self):
-        if not hasattr(self, '_data'):
-            self._data = self.convert_root()
-            xmlpath = os.path.join(self.output_directory, self.xml_fname)
-            self._data['params'] = convert_xml_dict(xmlpath)
-            if dict_changed(self._data['params'], self.params):
-                print('WARNING: Data parameters and self parameters are ' +
-                          'not equal. Use "data["params"]"')
-        return self._data
+    def run_exists(self):
+        '''
+        checks if this particular
+        '''
+        xmlpath = os.path.join(self.output_directory, self.xml_fname)
+        if not os.path.exists(xmlpath):
+            return False
+        old_params = convert_xml_dict(xmlpath)
+        return dict_changed(old_params, self.params) == set()
 
     def set_params(self, **kwargs):
+        if not hasattr(self, 'params'):
+            self.load_xml()
         set_params(self.params, **kwargs)
 
     def save_data(self):
@@ -126,12 +126,12 @@ class MiindIO:
                              time=None):
         if not self.WITH_STATE:
             raise ValueError('State is not saved.')
-        fname = os.path.join(self.output_directory, basename +
-                             '_marginal_density.npz')
+        fnameout = os.path.join(self.output_directory,
+                                basename + '_marginal_density.npz')
         if hasattr(self, '_marginal_density_' + basename):
             return getattr(self, '_marginal_density_' + basename)
-        if os.path.exists(fname):
-            return np.load(fname)['data'][()]
+        if os.path.exists(fnameout):
+            return np.load(fnameout)['data'][()]
         modelname = basename + '.model'
         modelpath = os.path.join(self.xml_location, modelname)
         assert os.path.exists(modelpath)
@@ -188,7 +188,7 @@ class MiindIO:
         data = {'v': vs, 'w': ws, 'bins_v': bins_v,
                 'bins_w': bins_w, 'times': times}
         setattr(self, '_marginal_density_' + basename, data)
-        np.savez(fname, data=data)
+        np.savez(fnameout, data=data)
         return data
 
     def read_projection(self, basename, vn, wn):
@@ -262,10 +262,6 @@ class MiindIO:
                 plt.close(fig)
 
     def generate(self, **kwargs):
-        self.load_xml()
-        shutil.copyfile(self.xml_path, self.xml_path + '.bak')
-        self.set_params(**kwargs)
-        self.dump_xml()
         if os.path.exists(self.output_directory):
             shutil.rmtree(self.output_directory)
         with cd(self.xml_location):
