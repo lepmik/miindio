@@ -9,6 +9,7 @@ import pandas as pd
 import collections
 from xmldict import dict_to_xml, xml_to_dict
 from tools import *
+import hashlib
 # From MIIND
 import directories
 import mesh
@@ -18,7 +19,16 @@ from ode2dsystem import Ode2DSystem
 class MiindIO:
     def __init__(self, xml_path, submit_name=None,
                  MIIND_BUILD_PATH=None, **kwargs):
-        self.xml_path = os.path.abspath(xml_path)
+        xml_path = os.path.abspath(xml_path)
+        # load current
+        self.params = convert_xml_dict(xml_path)
+        # set new params and generate self.params
+        self.set_params(**kwargs)
+        # generate sha based on parameters
+        self.generate_sha()
+        self.xml_path = xml_path.replace('.xml', self.sha + '.xml')
+        # dump to unique self.xml_path so miind will use new params
+        self.dump_xml()
         assert os.path.exists(self.xml_path)
         if MIIND_BUILD_PATH is not None:
             MIIND_BUILD_PATH = os.path.abspath(MIIND_BUILD_PATH)
@@ -29,16 +39,11 @@ class MiindIO:
         self.output_directory = os.path.join(
             self.xml_location, self.submit_name, xml_base_fname)
         self.miind_executable = xml_base_fname
-        # load current
-        self.load_xml()
-        shutil.copyfile(self.xml_path, self.xml_path + '.bak')
-        # set new params and generate self.params
-        self.set_params(**kwargs)
-        # dump so miind will use new params
-        self.dump_xml()
         simio = self.params['Simulation']['SimulationIO']
         self.WITH_STATE = simio['WithState']['content']
         self.simulation_name = simio['SimulationName']['content']
+        self.root_path = os.path.join(self.output_directory,
+                                      self.simulation_name + '_0.root')
         if MIIND_BUILD_PATH is None:
             srch = 'miind/build'
             path = [n for n in os.environ["PATH"].split(':') if srch in n]
@@ -55,16 +60,20 @@ class MiindIO:
             self.MIIND_APPS = os.path.join(MIIND_BUILD_PATH, 'apps')
         assert os.path.exists(self.MIIND_APPS)
 
+    def generate_sha(self):
+        assert hasattr(self, 'params')
+        par_str = json.dumps(self.params)
+        self.sha = hashlib.sha1(par_str).hexdigest()
+        return self.sha
+
     def get_rates(self):
-        root_path = os.path.join(self.output_directory,
-                                 self.simulation_name + '_0.root')
         fnameout = os.path.join(self.output_directory,
                                  self.simulation_name + '_rates.npz')
         if hasattr(self, '_rates'):
             return self._rates
         if os.path.exists(fnameout):
             return np.load(fnameout)['data'][()]
-        f = ROOT.TFile(root_path)
+        f = ROOT.TFile(self.root_path)
         keys = [key.GetName() for key in list(f.GetListOfKeys())]
         graphs = {key: f.Get(key) for key in keys
                   if isinstance(f.Get(key), ROOT.TGraph)}
@@ -105,16 +114,14 @@ class MiindIO:
         if not os.path.exists(xmlpath):
             return False
         old_params = convert_xml_dict(xmlpath)
+        if not os.path.exists(self.root_path):
+            return False
         return dict_changed(old_params, self.params) == set()
 
     def set_params(self, **kwargs):
         if not hasattr(self, 'params'):
             self.load_xml()
         set_params(self.params, **kwargs)
-
-    def save_data(self):
-        dname = os.path.join(os.path.splitext(self.root_path)[0]+'.npz')
-        np.savez(dname, data=data)
 
     def dump_xml(self):
         dump_xml(self.params, self.xml_path)
@@ -274,7 +281,6 @@ class MiindIO:
             subprocess.call(['make'], cwd=self.output_directory)
             shutil.move(self.xml_path,
                         os.path.join(self.output_directory, self.xml_fname))
-            shutil.move(self.xml_path + '.bak', self.xml_path)
 
     def run(self):
         subprocess.call('./' + self.miind_executable, cwd=self.output_directory)
