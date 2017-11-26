@@ -24,4 +24,9 @@ setup(
     extras_require=extras_require,
     packages=find_packages(),
     include_package_data=True,
+    entry_points={
+        'console_scripts': [
+            'miind=miindio.miindcli:main'
+        ],
+    }
 )
