@@ -22,13 +22,15 @@ class MiindIO:
         xml_path = os.path.abspath(xml_path)
         # load current
         self.params = convert_xml_dict(xml_path)
-        # set new params and generate self.params
-        self.set_params(**kwargs)
-        # generate sha based on parameters
-        self.generate_sha()
-        self.xml_path = xml_path.replace('.xml', self.sha + '.xml')
-        # dump to unique self.xml_path so miind will use new params
-        self.dump_xml()
+        # set new params
+        if kwargs:
+            self.set_params(**kwargs)
+            # generate sha based on parameters
+            self.xml_path = xml_path.replace('.xml', self.sha + '.xml')
+            # dump to unique self.xml_path so miind will use new params
+            self.dump_xml()
+        else:
+            self.xml_path = xml_path
         assert os.path.exists(self.xml_path)
         if MIIND_BUILD_PATH is not None:
             MIIND_BUILD_PATH = os.path.abspath(MIIND_BUILD_PATH)
@@ -60,11 +62,12 @@ class MiindIO:
             self.MIIND_APPS = os.path.join(MIIND_BUILD_PATH, 'apps')
         assert os.path.exists(self.MIIND_APPS)
 
-    def generate_sha(self):
+    @property
+    def sha(self):
         assert hasattr(self, 'params')
         par_str = json.dumps(self.params)
-        self.sha = hashlib.sha1(par_str).hexdigest()
-        return self.sha
+        sha = hashlib.sha1(par_str).hexdigest()
+        return sha
 
     def get_rates(self):
         fnameout = os.path.join(self.output_directory,
@@ -135,10 +138,10 @@ class MiindIO:
             raise ValueError('State is not saved.')
         fnameout = os.path.join(self.output_directory,
                                 basename + '_marginal_density.npz')
-        if hasattr(self, '_marginal_density_' + basename):
-            return getattr(self, '_marginal_density_' + basename)
-        if os.path.exists(fnameout):
-            return np.load(fnameout)['data'][()]
+        # if hasattr(self, '_marginal_density_' + basename):
+        #     return getattr(self, '_marginal_density_' + basename)
+        # if os.path.exists(fnameout):
+        #     return np.load(fnameout)['data'][()]
         modelname = basename + '.model'
         modelpath = os.path.join(self.xml_location, modelname)
         assert os.path.exists(modelpath)
@@ -154,6 +157,18 @@ class MiindIO:
         def get_density_time(path):
             fname = os.path.split(path)[-1]
             return float(fname.split('_')[2])
+
+        def get_scaling(proj):
+            scale = []
+            a = 0
+            for marg in proj.split(';'):
+                if len(marg) == 0:
+                    continue
+                jj, dd = marg.split(',')
+                a += float(dd)
+                scale.append((int(jj), float(dd)))
+            assert a - 1 < 1e-7, a
+            return scale
 
         fnames = sorted(fnames, key=get_density_time)
         times = [get_density_time(f) for f in fnames]
@@ -171,54 +186,59 @@ class MiindIO:
             times = [time]
         vs = np.zeros((len(fnames), projection['N_V']))
         ws = np.zeros((len(fnames), projection['N_W']))
+
         for ii, fname in enumerate(fnames):
             density = read_density(fname)
             for idx, (i, j) in enumerate(projection['coords']):
-                v = projection['vbins'][idx]
-                w = projection['wbins'][idx]
                 cell_dens = density[ode_sys.map(i, j)]
-                if cell_dens == 0:
+                if cell_dens < 1e-15:
                     continue
-                for var, container in zip([v, w], [vs, ws]):
-                    for marginalization in var.split(';'):
-                        if len(marginalization) == 0:
-                            continue
-                        jj, dd = marginalization.split(',')
-                        jj, dd = int(jj), float(dd)
-                        container[ii, jj] += cell_dens * dd
-        bins_v = np.linspace(projection['V_min'],
-                             projection['V_max'],
+                vbins = projection['vbins'][idx]
+                wbins = projection['wbins'][idx]
+                for jj, dd in get_scaling(vbins):
+                    vs[ii, jj] += cell_dens * dd
+                for jj, dd in get_scaling(wbins):
+                    ws[ii, jj] += cell_dens * dd
+        bins_v = np.linspace(projection['V_min'], projection['V_max'],
                              projection['N_V'])
-        bins_w = np.linspace(projection['W_min'],
-                             projection['W_max'],
+        bins_w = np.linspace(projection['W_min'], projection['W_max'],
                              projection['N_W'])
         data = {'v': vs, 'w': ws, 'bins_v': bins_v,
                 'bins_w': bins_w, 'times': times}
         setattr(self, '_marginal_density_' + basename, data)
         np.savez(fnameout, data=data)
-        return data
+        return data, density
+
+    def make_projection_file(self, basename, vn, wn):
+        projection_exe = os.path.join(self.MIIND_APPS, 'Projection',
+                                      'Projection')
+        out = subprocess.check_output(
+            [projection_exe, basename + '.mesh.bak'],
+             cwd=self.xml_location)
+        vmax, wmax = np.ceil(np.array(out.split('\n')[3].split(' ')[2:],
+                                      dtype=float)).astype(int)
+        vmin, wmin = np.floor(np.array(out.split('\n')[4].split(' ')[2:],
+                                      dtype=float)).astype(int)
+        cmd = [projection_exe, basename + '.mesh.bak', vmin, vmax,
+               vn, wmin, wmax, wn]
+        subprocess.call([str(c) for c in cmd], cwd=self.xml_location)
 
     def read_projection(self, basename, vn, wn):
         proj_pathname = os.path.join(
             self.xml_location, basename + '.projection')
         if not os.path.exists(proj_pathname):
             print('No projection file found, generating...')
-            projection_exe = os.path.join(self.MIIND_APPS, 'Projection',
-                                          'Projection')
-            out = subprocess.check_output(
-                [projection_exe, basename + '.mesh.bak'],
-                 cwd=self.xml_location)
-            vmax, wmax = np.ceil(np.array(out.split('\n')[3].split(' ')[2:],
-                                          dtype=float)).astype(int)
-            vmin, wmin = np.floor(np.array(out.split('\n')[4].split(' ')[2:],
-                                          dtype=float)).astype(int)
-            cmd = [projection_exe, basename + '.mesh.bak', vmin, vmax,
-                   vn, wmin, wmax, wn]
-            subprocess.call([str(c) for c in cmd], cwd=self.xml_location)
+            self.make_projection_file(basename, vn, wn)
         proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
                            text_content=None)
+        if (proj['Projection']['W_limit']['N_W'] != wn or
+                proj['Projection']['V_limit']['N_V'] != vn):
+            print('New N in bins, generating projection file...')
+            self.make_projection_file(basename, vn, wn)
+            proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
+                               text_content=None)
         # TODO reading below not necessary, when marc makes a proper xml
-        cells_ij = []
+        coords = []
         vbins, wbins = [], []
         with open(proj_pathname, 'r') as f:
             read = False
@@ -232,12 +252,15 @@ class MiindIO:
                         continue
                     s1 = l.split(',')
                     s2 = s1[1].split(';')
-                    cells_ij.append((int(s1[0]), int(s2[0])))
+                    coords.append((int(s1[0]), int(s2[0])))
                     vbins.append(remove_txt(l.split('vbins')[1], '<', '>', '/'))
                     wbins.append(remove_txt(l.split('wbins')[1], '<', '>', '/'))
         assert proj['Projection']['vbins'] == vbins
         assert proj['Projection']['wbins'] == wbins
+        assert len(set(coords)) == len(coords)
+
         return {
+            'coords': coords,
             'vbins': vbins,
             'wbins': wbins,
             'V_min': proj['Projection']['V_limit']['V_min'],
@@ -246,12 +269,15 @@ class MiindIO:
             'W_min': proj['Projection']['W_limit']['W_min'],
             'W_max': proj['Projection']['W_limit']['W_max'],
             'N_W': proj['Projection']['W_limit']['N_W'],
-            'coords': cells_ij
         }
 
     def plot_marginal_density(self, basename, *args):
         import matplotlib.pyplot as plt
         data = self.get_marginal_density(basename, *args)
+        path = os.path.join(self.output_directory,
+                            basename + '_marginal_density')
+        if not os.path.exists(path):
+            os.mkdir(path)
         for ii in range(len(data['times'])):
             fig, axs = plt.subplots(1, 2)
             params = {
@@ -264,9 +290,33 @@ class MiindIO:
             plt.suptitle('time = {}'.format(data['times'][ii]))
             for p in params:
                 p['ax'].plot(p['bins'], p['dens'][ii, :])
-                fig.savefig(os.path.join(self.output_directory,
+                fig.savefig(os.path.join(path,
                             'marginal_density_{}.png'.format(ii)))
                 plt.close(fig)
+
+    def plot_density(self, basename, colorbar=[1e-6,1.,100]):
+        import visualize
+        path = os.path.join(self.output_directory,
+                            basename + '_density')
+        if not os.path.exists(path):
+            os.mkdir(path)
+        modelname = basename + '.model'
+        fnames = glob.glob(os.path.join(self.output_directory,
+                                        modelname + '_mesh', 'mesh*'))
+
+        def get_density_time(path):
+            fname = os.path.split(path)[-1]
+            return float(fname.split('_')[2])
+
+        fnames = sorted(fnames, key=get_density_time)
+        m = visualize.ModelVisualizer(modelname)
+        for i, fpath in enumerate(fnames):
+            time = get_density_time(fpath)
+            fname = os.path.split(fpath)[-1]
+            m.showfile(fpath,
+                       pdfname=os.path.join(path, '%i_'%i + fname),
+                       runningtext='t = %f'%time,
+                       colorlegend=colorbar)
 
     def generate(self, **kwargs):
         if os.path.exists(self.output_directory):
@@ -279,8 +329,8 @@ class MiindIO:
                              '-DCMAKE_CXX_FLAGS=-fext-numeric-literals'],
                              cwd=self.output_directory)
             subprocess.call(['make'], cwd=self.output_directory)
-            shutil.move(self.xml_path,
-                        os.path.join(self.output_directory, self.xml_fname))
+            shutil.copyfile(self.xml_path, os.path.join(self.output_directory,
+                                                        self.xml_fname))
 
     def run(self):
         subprocess.call('./' + self.miind_executable, cwd=self.output_directory)
