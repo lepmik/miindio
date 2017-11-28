@@ -133,20 +133,21 @@ class MiindIO:
         self.params = convert_xml_dict(self.xml_path)
 
     def get_marginal_density(self, basename, vn=100, wn=100, timestep=None,
-                             time=None):
+                             time=None, force=False):
         if not self.WITH_STATE:
             raise ValueError('State is not saved.')
         fnameout = os.path.join(self.output_directory,
                                 basename + '_marginal_density.npz')
-        # if hasattr(self, '_marginal_density_' + basename):
-        #     return getattr(self, '_marginal_density_' + basename)
-        # if os.path.exists(fnameout):
-        #     return np.load(fnameout)['data'][()]
+        if not force:
+            if hasattr(self, '_marginal_density_' + basename):
+                return getattr(self, '_marginal_density_' + basename)
+            if os.path.exists(fnameout):
+                return np.load(fnameout)['data'][()]
         modelname = basename + '.model'
         modelpath = os.path.join(self.xml_location, modelname)
         assert os.path.exists(modelpath)
         meshpath = extract_mesh(modelpath)
-        projection = self.read_projection(basename, vn, wn)
+        proj = self.read_projection(basename, vn, wn)
         fnames = glob.glob(os.path.join(self.output_directory,
                                         modelname + '_mesh', 'mesh*'))
 
@@ -184,30 +185,39 @@ class MiindIO:
                 raise TypeError('"time" must be a float or the string "end"')
             fnames = [fnames[times.index(time)]]
             times = [time]
-        vs = np.zeros((len(fnames), projection['N_V']))
-        ws = np.zeros((len(fnames), projection['N_W']))
+        vs = np.zeros((len(fnames), proj['N_V']))
+        ws = np.zeros((len(fnames), proj['N_W']))
 
+        print('Computing marginals.')
         for ii, fname in enumerate(fnames):
-            density = read_density(fname)
-            for idx, (i, j) in enumerate(projection['coords']):
+            try:
+                density = read_density(fname)
+            except ValueError:
+                print('Unable to read ' + fname)
+                continue
+            for idx, (i, j) in enumerate(proj['coords']):
                 cell_dens = density[ode_sys.map(i, j)]
                 if cell_dens < 1e-15:
                     continue
-                vbins = projection['vbins'][idx]
-                wbins = projection['wbins'][idx]
+                vbins = proj['vbins'][idx]
+                wbins = proj['wbins'][idx]
                 for jj, dd in get_scaling(vbins):
                     vs[ii, jj] += cell_dens * dd
                 for jj, dd in get_scaling(wbins):
                     ws[ii, jj] += cell_dens * dd
-        bins_v = np.linspace(projection['V_min'], projection['V_max'],
-                             projection['N_V'])
-        bins_w = np.linspace(projection['W_min'], projection['W_max'],
-                             projection['N_W'])
+        dv = abs(proj['V_max'] - proj['V_min']) / float(proj['N_V'])
+        bins_v = np.linspace(proj['V_min'], proj['V_max'], proj['N_V'])
+        dw = abs(proj['W_max'] - proj['W_min']) / float(proj['N_W'])
+        bins_w = np.linspace(proj['W_min'], proj['W_max'], proj['N_W'])
+        # Normalize to density
+        for db, n_ in zip([dv, dw], [vs, ws]):
+            for i in range(len(fnames)):
+                n_[i, :] = n_[i, :] / db / n_[i, :].sum()
         data = {'v': vs, 'w': ws, 'bins_v': bins_v,
                 'bins_w': bins_w, 'times': times}
         setattr(self, '_marginal_density_' + basename, data)
         np.savez(fnameout, data=data)
-        return data, density
+        return data
 
     def make_projection_file(self, basename, vn, wn):
         projection_exe = os.path.join(self.MIIND_APPS, 'Projection',
@@ -271,9 +281,9 @@ class MiindIO:
             'N_W': proj['Projection']['W_limit']['N_W'],
         }
 
-    def plot_marginal_density(self, basename, *args):
+    def plot_marginal_density(self, basename, **args):
         import matplotlib.pyplot as plt
-        data = self.get_marginal_density(basename, *args)
+        data = self.get_marginal_density(basename, **args)
         path = os.path.join(self.output_directory,
                             basename + '_marginal_density')
         if not os.path.exists(path):
