@@ -150,7 +150,8 @@ class MiindIO:
         proj = self.read_projection(basename, vn, wn)
         fnames = glob.glob(os.path.join(self.output_directory,
                                         modelname + '_mesh', 'mesh*'))
-
+        if len(fnames) == 0:
+            raise ValueError('No density output found for {}'.format(basename))
         m = mesh.Mesh(None)
         m.FromXML(meshpath)
         ode_sys = Ode2DSystem(m, [], [])
