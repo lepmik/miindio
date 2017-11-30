@@ -119,13 +119,15 @@ class MiindIO:
         checks if this particular
         '''
         xmlpath = op.join(self.output_directory, self.xml_fname)
+        modelfiles = [op.join(self.output_directory, m)
+                      for m in self.modelfiles]
         if not op.exists(xmlpath):
             return False
         old_params = convert_xml_dict(xmlpath)
         if not op.exists(self.root_path):
             return False
         if self.WITH_STATE:
-            for p in self.modelfiles:
+            for p in modelfiles:
                 if not op.exists(p + '_mesh'):
                     return False
                 if len(os.listdir(p + '_mesh')) == 0:
