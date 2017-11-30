@@ -1,4 +1,5 @@
 import os
+import os.path as op
 import glob
 import ROOT
 import numpy as np
@@ -19,7 +20,7 @@ from ode2dsystem import Ode2DSystem
 class MiindIO:
     def __init__(self, xml_path, submit_name=None,
                  MIIND_BUILD_PATH=None, **kwargs):
-        xml_path = os.path.abspath(xml_path)
+        xml_path = op.abspath(xml_path)
         # load current
         self.params = convert_xml_dict(xml_path)
         # set new params
@@ -31,14 +32,14 @@ class MiindIO:
             self.dump_xml()
         else:
             self.xml_path = xml_path
-        assert os.path.exists(self.xml_path)
+        assert op.exists(self.xml_path)
         if MIIND_BUILD_PATH is not None:
-            MIIND_BUILD_PATH = os.path.abspath(MIIND_BUILD_PATH)
-            assert os.path.exists(MIIND_BUILD_PATH)
-        self.xml_location, self.xml_fname = os.path.split(self.xml_path)
-        xml_base_fname, _ = os.path.splitext(self.xml_fname)
+            MIIND_BUILD_PATH = op.abspath(MIIND_BUILD_PATH)
+            assert op.exists(MIIND_BUILD_PATH)
+        self.xml_location, self.xml_fname = op.split(self.xml_path)
+        xml_base_fname, _ = op.splitext(self.xml_fname)
         self.submit_name = submit_name or xml_base_fname
-        self.output_directory = os.path.join(
+        self.output_directory = op.join(
             self.xml_location, self.submit_name, xml_base_fname)
         self.miind_executable = xml_base_fname
         simpar = self.params['Simulation']
@@ -48,7 +49,7 @@ class MiindIO:
         simio = simpar['SimulationIO']
         self.WITH_STATE = simio['WithState']['content']
         self.simulation_name = simio['SimulationName']['content']
-        self.root_path = os.path.join(self.output_directory,
+        self.root_path = op.join(self.output_directory,
                                       self.simulation_name + '_0.root')
         if MIIND_BUILD_PATH is None:
             srch = 'miind/build'
@@ -61,10 +62,10 @@ class MiindIO:
             idx = path.index(srch) + len(srch)
             path = path[:idx]
             print('Found the MIIND build path at {}.'.format(path))
-            self.MIIND_APPS = os.path.join(path, 'apps')
+            self.MIIND_APPS = op.join(path, 'apps')
         else:
-            self.MIIND_APPS = os.path.join(MIIND_BUILD_PATH, 'apps')
-        assert os.path.exists(self.MIIND_APPS)
+            self.MIIND_APPS = op.join(MIIND_BUILD_PATH, 'apps')
+        assert op.exists(self.MIIND_APPS)
 
     @property
     def sha(self):
@@ -74,11 +75,11 @@ class MiindIO:
         return sha
 
     def get_rates(self):
-        fnameout = os.path.join(self.output_directory,
+        fnameout = op.join(self.output_directory,
                                  self.simulation_name + '_rates.npz')
         if hasattr(self, '_rates'):
             return self._rates
-        if os.path.exists(fnameout):
+        if op.exists(fnameout):
             return np.load(fnameout)['data'][()]
         f = ROOT.TFile(self.root_path)
         keys = [key.GetName() for key in list(f.GetListOfKeys())]
@@ -117,16 +118,15 @@ class MiindIO:
         '''
         checks if this particular
         '''
-        exists = os.path.exists
-        xmlpath = join(self.output_directory, self.xml_fname)
-        if not exists(xmlpath):
+        xmlpath = op.join(self.output_directory, self.xml_fname)
+        if not op.exists(xmlpath):
             return False
         old_params = convert_xml_dict(xmlpath)
-        if not exists(self.root_path):
+        if not op.exists(self.root_path):
             return False
         if self.WITH_STATE:
             for p in self.modelfiles:
-                if not exists(p + '_mesh'):
+                if not op.exists(p + '_mesh'):
                     return False
                 if len(os.listdir(p + '_mesh')) == 0:
                     return False
@@ -154,20 +154,20 @@ class MiindIO:
                              time=None, force=False):
         if not self.WITH_STATE:
             raise ValueError('State is not saved.')
-        fnameout = os.path.join(self.output_directory,
+        fnameout = op.join(self.output_directory,
                                 basename + '_marginal_density.npz')
         if not force:
             if hasattr(self, '_marginal_density_' + basename):
                 return getattr(self, '_marginal_density_' + basename)
-            if os.path.exists(fnameout):
+            if op.exists(fnameout):
                 return np.load(fnameout)['data'][()]
         modelname = basename + '.model'
         assert modelname in self.modelfiles
-        modelpath = os.path.join(self.xml_location, modelname)
-        assert os.path.exists(modelpath)
+        modelpath = op.join(self.xml_location, modelname)
+        assert op.exists(modelpath)
         meshpath = extract_mesh(modelpath)
         proj = self.read_projection(basename, vn, wn)
-        fnames = glob.glob(os.path.join(self.output_directory,
+        fnames = glob.glob(op.join(self.output_directory,
                                         modelname + '_mesh', 'mesh*'))
         if len(fnames) == 0:
             raise ValueError('No density output found for {}'.format(basename))
@@ -176,7 +176,7 @@ class MiindIO:
         ode_sys = Ode2DSystem(m, [], [])
 
         def get_density_time(path):
-            fname = os.path.split(path)[-1]
+            fname = op.split(path)[-1]
             return float(fname.split('_')[2])
 
         def get_scaling(proj):
@@ -240,7 +240,7 @@ class MiindIO:
         return data
 
     def make_projection_file(self, basename, vn, wn):
-        projection_exe = os.path.join(self.MIIND_APPS, 'Projection',
+        projection_exe = op.join(self.MIIND_APPS, 'Projection',
                                       'Projection')
         out = subprocess.check_output(
             [projection_exe, basename + '.mesh.bak'],
@@ -254,9 +254,9 @@ class MiindIO:
         subprocess.call([str(c) for c in cmd], cwd=self.xml_location)
 
     def read_projection(self, basename, vn, wn):
-        proj_pathname = os.path.join(
+        proj_pathname = op.join(
             self.xml_location, basename + '.projection')
-        if not os.path.exists(proj_pathname):
+        if not op.exists(proj_pathname):
             print('No projection file found, generating...')
             self.make_projection_file(basename, vn, wn)
         proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
@@ -304,9 +304,9 @@ class MiindIO:
     def plot_marginal_density(self, basename, **args):
         import matplotlib.pyplot as plt
         data = self.get_marginal_density(basename, **args)
-        path = os.path.join(self.output_directory,
+        path = op.join(self.output_directory,
                             basename + '_marginal_density')
-        if not os.path.exists(path):
+        if not op.exists(path):
             os.mkdir(path)
         for ii in range(len(data['times'])):
             fig, axs = plt.subplots(1, 2)
@@ -320,36 +320,36 @@ class MiindIO:
             plt.suptitle('time = {}'.format(data['times'][ii]))
             for p in params:
                 p['ax'].plot(p['bins'], p['dens'][ii, :])
-                fig.savefig(os.path.join(path,
+                fig.savefig(op.join(path,
                             'marginal_density_{}.png'.format(ii)))
                 plt.close(fig)
 
     def plot_density(self, basename, colorbar=[1e-6,1.,100]):
         import visualize
-        path = os.path.join(self.output_directory,
+        path = op.join(self.output_directory,
                             basename + '_density')
-        if not os.path.exists(path):
+        if not op.exists(path):
             os.mkdir(path)
         modelname = basename + '.model'
-        fnames = glob.glob(os.path.join(self.output_directory,
+        fnames = glob.glob(op.join(self.output_directory,
                                         modelname + '_mesh', 'mesh*'))
 
         def get_density_time(path):
-            fname = os.path.split(path)[-1]
+            fname = op.split(path)[-1]
             return float(fname.split('_')[2])
 
         fnames = sorted(fnames, key=get_density_time)
         m = visualize.ModelVisualizer(modelname)
         for i, fpath in enumerate(fnames):
             time = get_density_time(fpath)
-            fname = os.path.split(fpath)[-1]
+            fname = op.split(fpath)[-1]
             m.showfile(fpath,
-                       pdfname=os.path.join(path, '%i_'%i + fname),
+                       pdfname=op.join(path, '%i_'%i + fname),
                        runningtext='t = %f'%time,
                        colorlegend=colorbar)
 
     def generate(self, **kwargs):
-        if os.path.exists(self.output_directory):
+        if op.exists(self.output_directory):
             shutil.rmtree(self.output_directory)
         with cd(self.xml_location):
             directories.add_executable(self.submit_name, [self.xml_path], '')
@@ -359,7 +359,7 @@ class MiindIO:
                              '-DCMAKE_CXX_FLAGS=-fext-numeric-literals'],
                              cwd=self.output_directory)
             subprocess.call(['make'], cwd=self.output_directory)
-            shutil.copyfile(self.xml_path, os.path.join(self.output_directory,
+            shutil.copyfile(self.xml_path, op.join(self.output_directory,
                                                         self.xml_fname))
 
     def run(self):
