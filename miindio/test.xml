@@ -1,14 +1,14 @@
 <Simulation>
   <WeightType>DelayedConnection</WeightType>
   <Algorithms>
-    <Algorithm type="MeshAlgorithm" name="E" modelfile="aexp7ee3879d-3dd7-41d2-972e-47f4d16845cd.model" >
+    <Algorithm type="MeshAlgorithm" name="E" modelfile="aexp.model" >
       <TimeStep>0.0002</TimeStep>
-      <MatrixFile>aexp7ee3879d-3dd7-41d2-972e-47f4d16845cd_1_0_0_0_.mat</MatrixFile>
+      <MatrixFile>aexp_1_0_0_0_.mat</MatrixFile>
     </Algorithm>
-    <Algorithm type="MeshAlgorithm" name="I" modelfile="aexpnoa283cc1a3-4248-4ad0-a38d-01e44a2b95d3.model" >
+    <Algorithm type="MeshAlgorithm" name="I" modelfile="aexpnoa.model" >
       <TimeStep>0.0002</TimeStep>
-      <MatrixFile>aexpnoa283cc1a3-4248-4ad0-a38d-01e44a2b95d3_1_0_0_0_.mat</MatrixFile>
-      <MatrixFile>aexpnoa283cc1a3-4248-4ad0-a38d-01e44a2b95d3_-1_0_0_0_.mat</MatrixFile>
+      <MatrixFile>aexpnoa_1_0_0_0_.mat</MatrixFile>
+      <MatrixFile>aexpnoa_-1_0_0_0_.mat</MatrixFile>
     </Algorithm>
     <Algorithm type="RateFunctor" name="Exc Input">
       <expression>4000.</expression>

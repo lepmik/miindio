@@ -41,7 +41,11 @@ class MiindIO:
         self.output_directory = os.path.join(
             self.xml_location, self.submit_name, xml_base_fname)
         self.miind_executable = xml_base_fname
-        simio = self.params['Simulation']['SimulationIO']
+        simpar = self.params['Simulation']
+        self.modelfiles = [m.get('modelfile')
+                           for m in simpar['Algorithms']['Algorithm']
+                           if m.get('modelfile') is not None]
+        simio = simpar['SimulationIO']
         self.WITH_STATE = simio['WithState']['content']
         self.simulation_name = simio['SimulationName']['content']
         self.root_path = os.path.join(self.output_directory,
@@ -113,12 +117,19 @@ class MiindIO:
         '''
         checks if this particular
         '''
-        xmlpath = os.path.join(self.output_directory, self.xml_fname)
-        if not os.path.exists(xmlpath):
+        exists = os.path.exists
+        xmlpath = join(self.output_directory, self.xml_fname)
+        if not exists(xmlpath):
             return False
         old_params = convert_xml_dict(xmlpath)
-        if not os.path.exists(self.root_path):
+        if not exists(self.root_path):
             return False
+        if self.WITH_STATE:
+            for p in self.modelfiles:
+                if not exists(p + '_mesh'):
+                    return False
+                if len(os.listdir(p + '_mesh')) == 0:
+                    return False
         return dict_changed(old_params, self.params) == set()
 
     def set_params(self, **kwargs):
@@ -132,6 +143,13 @@ class MiindIO:
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
 
+    def get_marginal_densities(self, **kwargs):
+        data = {}
+        for m in self.modelfiles:
+            b = m.replace('.model', '')
+            data[b] = self.get_marginal_density(b, **kwargs)
+        return data
+
     def get_marginal_density(self, basename, vn=100, wn=100, timestep=None,
                              time=None, force=False):
         if not self.WITH_STATE:
@@ -144,6 +162,7 @@ class MiindIO:
             if os.path.exists(fnameout):
                 return np.load(fnameout)['data'][()]
         modelname = basename + '.model'
+        assert modelname in self.modelfiles
         modelpath = os.path.join(self.xml_location, modelname)
         assert os.path.exists(modelpath)
         meshpath = extract_mesh(modelpath)
