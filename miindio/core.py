@@ -164,7 +164,7 @@ class MiindIO:
             if op.exists(fnameout):
                 return np.load(fnameout)['data'][()]
         modelname = basename + '.model'
-        assert modelname in self.modelfiles
+        assert modelname in self.modelfiles, modelname
         modelpath = op.join(self.xml_location, modelname)
         assert op.exists(modelpath)
         meshpath = extract_mesh(modelpath)
@@ -245,13 +245,13 @@ class MiindIO:
         projection_exe = op.join(self.MIIND_APPS, 'Projection',
                                       'Projection')
         out = subprocess.check_output(
-            [projection_exe, basename + '.mesh.bak'],
+            [projection_exe, basename + '.model'],
              cwd=self.xml_location)
         vmax, wmax = np.ceil(np.array(out.split('\n')[3].split(' ')[2:],
                                       dtype=float)).astype(int)
         vmin, wmin = np.floor(np.array(out.split('\n')[4].split(' ')[2:],
                                       dtype=float)).astype(int)
-        cmd = [projection_exe, basename + '.mesh.bak', vmin, vmax,
+        cmd = [projection_exe, basename + '.model', vmin, vmax,
                vn, wmin, wmax, wn]
         subprocess.call([str(c) for c in cmd], cwd=self.xml_location)
 
