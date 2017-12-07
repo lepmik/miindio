@@ -3,18 +3,10 @@ from tools import *
 import mesh as meshmod
 import glob
 
+
 class Density:
-    def __init__(self, xml_location, output_directory, parameters):
-        self.xml_location = xml_location
-        self.output_directory = output_directory
-        simpar = parameters['Simulation']
-        self.modelfiles = [m.get('modelfile')
-                           for m in simpar['Algorithms']['Algorithm']
-                           if m.get('modelfile') is not None]
-        simio = simpar['SimulationIO']
-        self.WITH_STATE = simio['WithState']['content']
-        if not self.WITH_STATE:
-            raise ValueError('State is not saved.')
+    def __init__(self, io):
+        self.__dict__.update(io.__dict__)
 
     def get_marginal_densities(self, modelpath=None, densityfname=None,
                              time=None, timestep=None, vn=100, wn=100,

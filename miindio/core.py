@@ -47,9 +47,6 @@ class MiindIO:
                            if m.get('modelfile') is not None]
         simio = simpar['SimulationIO']
         self.WITH_STATE = simio['WithState']['content']
-        if self.WITH_STATE:
-            self.density = Density(self.xml_location, self.output_directory,
-                                   self.params)
         self.simulation_name = simio['SimulationName']['content']
         self.root_path = op.join(self.output_directory,
                                       self.simulation_name + '_0.root')
@@ -68,6 +65,8 @@ class MiindIO:
         else:
             self.MIIND_APPS = op.join(MIIND_BUILD_PATH, 'apps')
         assert op.exists(self.MIIND_APPS)
+        if self.WITH_STATE:
+            self.density = Density(self)
 
     @property
     def sha(self):
