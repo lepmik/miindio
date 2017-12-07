@@ -3,6 +3,7 @@ import xml.dom.minidom as minidom
 from pprint import pprint
 import json
 import os
+import os.path as op
 import numpy as np
 import copy
 from collections import Mapping, OrderedDict
@@ -30,11 +31,21 @@ def dict_changed(d1, d2):
 
 def read_density(filename):
     f = open(filename, 'r')
-    line = f.readline()
-    data = np.array([float(x) for x in line.split()[2::3]])
-    if any(data < 0):
-        raise ValueError('Negative density')
-    return np.array(data)
+    line = f.readline().split()
+    data = [float(x) for x in line[2::3]]
+    coords = [(int(i), int(j)) for i, j in zip(line[::3], line[1::3])]
+    return data, coords
+
+
+def get_density_time(path):
+    fname = op.split(path)[-1]
+    return float(fname.split('_')[2])
+
+
+def calc_mass(mesh, density, coords):
+    masses = [mesh.cells[i][j].area * dens
+              for (i, j), dens in zip(coords, density)]
+    return masses
 
 
 def prettify_xml(elem):

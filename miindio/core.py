@@ -11,10 +11,9 @@ import collections
 from xmldict import dict_to_xml, xml_to_dict
 from tools import *
 import hashlib
+from density import Density
 # From MIIND
 import directories
-import mesh
-from ode2dsystem import Ode2DSystem
 
 
 class MiindIO:
@@ -48,6 +47,9 @@ class MiindIO:
                            if m.get('modelfile') is not None]
         simio = simpar['SimulationIO']
         self.WITH_STATE = simio['WithState']['content']
+        if self.WITH_STATE:
+            self.density = Density(self.xml_location, self.output_directory,
+                                   self.params)
         self.simulation_name = simio['SimulationName']['content']
         self.root_path = op.join(self.output_directory,
                                       self.simulation_name + '_0.root')
@@ -144,211 +146,6 @@ class MiindIO:
 
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
-
-    def get_marginal_densities(self, **kwargs):
-        data = {}
-        for m in self.modelfiles:
-            b = m.replace('.model', '')
-            data[b] = self.get_marginal_density(b, **kwargs)
-        return data
-
-    def get_marginal_density(self, basename, vn=100, wn=100, timestep=None,
-                             time=None, force=False):
-        if not self.WITH_STATE:
-            raise ValueError('State is not saved.')
-        fnameout = op.join(self.output_directory,
-                                basename + '_marginal_density.npz')
-        if not force:
-            if hasattr(self, '_marginal_density_' + basename):
-                return getattr(self, '_marginal_density_' + basename)
-            if op.exists(fnameout):
-                return np.load(fnameout)['data'][()]
-        modelname = basename + '.model'
-        assert modelname in self.modelfiles, modelname
-        modelpath = op.join(self.xml_location, modelname)
-        assert op.exists(modelpath)
-        meshpath = extract_mesh(modelpath)
-        proj = self.read_projection(basename, vn, wn)
-        fnames = glob.glob(op.join(self.output_directory,
-                                        modelname + '_mesh', 'mesh*'))
-        if len(fnames) == 0:
-            raise ValueError('No density output found for {}'.format(basename))
-        m = mesh.Mesh(None)
-        m.FromXML(meshpath)
-        ode_sys = Ode2DSystem(m, [], [])
-
-        def get_density_time(path):
-            fname = op.split(path)[-1]
-            return float(fname.split('_')[2])
-
-        def get_scaling(proj):
-            scale = []
-            a = 0
-            for marg in proj.split(';'):
-                if len(marg) == 0:
-                    continue
-                jj, dd = marg.split(',')
-                a += float(dd)
-                scale.append((int(jj), float(dd)))
-            assert a - 1 < 1e-7, a
-            return scale
-
-        fnames = sorted(fnames, key=get_density_time)
-        times = [get_density_time(f) for f in fnames]
-        if timestep is not None:
-            assert time is None
-            fnames = fnames[::timestep]
-            times = times[::timestep]
-        if time is not None:
-            assert timestep is None
-            if time == 'end':
-                time = times[-1]
-            elif not isinstance(time, float):
-                raise TypeError('"time" must be a float or the string "end"')
-            fnames = [fnames[times.index(time)]]
-            times = [time]
-        vs = np.zeros((len(fnames), proj['N_V']))
-        ws = np.zeros((len(fnames), proj['N_W']))
-
-        print('Computing marginals.')
-        for ii, fname in enumerate(fnames):
-            try:
-                density = read_density(fname)
-            except ValueError:
-                print('Unable to read ' + fname)
-                continue
-            for idx, (i, j) in enumerate(proj['coords']):
-                cell_dens = density[ode_sys.map(i, j)]
-                if cell_dens < 1e-15:
-                    continue
-                vbins = proj['vbins'][idx]
-                wbins = proj['wbins'][idx]
-                for jj, dd in get_scaling(vbins):
-                    vs[ii, jj] += cell_dens * dd
-                for jj, dd in get_scaling(wbins):
-                    ws[ii, jj] += cell_dens * dd
-        dv = abs(proj['V_max'] - proj['V_min']) / float(proj['N_V'])
-        bins_v = np.linspace(proj['V_min'], proj['V_max'], proj['N_V'])
-        dw = abs(proj['W_max'] - proj['W_min']) / float(proj['N_W'])
-        bins_w = np.linspace(proj['W_min'], proj['W_max'], proj['N_W'])
-        # Normalize to density
-        for db, n_ in zip([dv, dw], [vs, ws]):
-            for i in range(len(fnames)):
-                n_[i, :] = n_[i, :] / db / n_[i, :].sum()
-        data = {'v': vs, 'w': ws, 'bins_v': bins_v,
-                'bins_w': bins_w, 'times': times}
-        setattr(self, '_marginal_density_' + basename, data)
-        np.savez(fnameout, data=data)
-        return data
-
-    def make_projection_file(self, basename, vn, wn):
-        projection_exe = op.join(self.MIIND_APPS, 'Projection',
-                                      'Projection')
-        out = subprocess.check_output(
-            [projection_exe, basename + '.model'],
-             cwd=self.xml_location)
-        vmax, wmax = np.ceil(np.array(out.split('\n')[3].split(' ')[2:],
-                                      dtype=float)).astype(int)
-        vmin, wmin = np.floor(np.array(out.split('\n')[4].split(' ')[2:],
-                                      dtype=float)).astype(int)
-        cmd = [projection_exe, basename + '.model', vmin, vmax,
-               vn, wmin, wmax, wn]
-        subprocess.call([str(c) for c in cmd], cwd=self.xml_location)
-
-    def read_projection(self, basename, vn, wn):
-        proj_pathname = op.join(
-            self.xml_location, basename + '.projection')
-        if not op.exists(proj_pathname):
-            print('No projection file found, generating...')
-            self.make_projection_file(basename, vn, wn)
-        proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
-                           text_content=None)
-        if (proj['Projection']['W_limit']['N_W'] != wn or
-                proj['Projection']['V_limit']['N_V'] != vn):
-            print('New N in bins, generating projection file...')
-            self.make_projection_file(basename, vn, wn)
-            proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
-                               text_content=None)
-        # TODO reading below not necessary, when marc makes a proper xml
-        coords = []
-        vbins, wbins = [], []
-        with open(proj_pathname, 'r') as f:
-            read = False
-            for l in f:
-                l = l.strip()
-                if l == '</W_limit>':
-                    read = True
-                    continue
-                if read:
-                    if l == '</Projection>':
-                        continue
-                    s1 = l.split(',')
-                    s2 = s1[1].split(';')
-                    coords.append((int(s1[0]), int(s2[0])))
-                    vbins.append(remove_txt(l.split('vbins')[1], '<', '>', '/'))
-                    wbins.append(remove_txt(l.split('wbins')[1], '<', '>', '/'))
-        assert proj['Projection']['vbins'] == vbins
-        assert proj['Projection']['wbins'] == wbins
-        assert len(set(coords)) == len(coords)
-
-        return {
-            'coords': coords,
-            'vbins': vbins,
-            'wbins': wbins,
-            'V_min': proj['Projection']['V_limit']['V_min'],
-            'V_max': proj['Projection']['V_limit']['V_max'],
-            'N_V': proj['Projection']['V_limit']['N_V'],
-            'W_min': proj['Projection']['W_limit']['W_min'],
-            'W_max': proj['Projection']['W_limit']['W_max'],
-            'N_W': proj['Projection']['W_limit']['N_W'],
-        }
-
-    def plot_marginal_density(self, basename, **args):
-        import matplotlib.pyplot as plt
-        data = self.get_marginal_density(basename, **args)
-        path = op.join(self.output_directory,
-                            basename + '_marginal_density')
-        if not op.exists(path):
-            os.mkdir(path)
-        for ii in range(len(data['times'])):
-            fig, axs = plt.subplots(1, 2)
-            params = {
-                'ax': axs,
-                'dens': [data['v'], data['w']],
-                'bins': [data['bins_v'], data['bins_w']]
-            }
-            params = [{k: v[i] for k, v in params.items()}
-                      for i in range(len(params['ax']))]
-            plt.suptitle('time = {}'.format(data['times'][ii]))
-            for p in params:
-                p['ax'].plot(p['bins'], p['dens'][ii, :])
-                fig.savefig(op.join(path,
-                            'marginal_density_{}.png'.format(ii)))
-                plt.close(fig)
-
-    def plot_density(self, basename, colorbar=[1e-6,1.,100]):
-        import visualize
-        path = op.join(self.output_directory,
-                            basename + '_density')
-        if not op.exists(path):
-            os.mkdir(path)
-        modelname = basename + '.model'
-        fnames = glob.glob(op.join(self.output_directory,
-                                        modelname + '_mesh', 'mesh*'))
-
-        def get_density_time(path):
-            fname = op.split(path)[-1]
-            return float(fname.split('_')[2])
-
-        fnames = sorted(fnames, key=get_density_time)
-        m = visualize.ModelVisualizer(modelname)
-        for i, fpath in enumerate(fnames):
-            time = get_density_time(fpath)
-            fname = op.split(fpath)[-1]
-            m.showfile(fpath,
-                       pdfname=op.join(path, '%i_'%i + fname),
-                       runningtext='t = %f'%time,
-                       colorlegend=colorbar)
 
     def generate(self, **kwargs):
         if op.exists(self.output_directory):
