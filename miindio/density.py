@@ -2,6 +2,7 @@ import os.path as op
 from tools import *
 import mesh as meshmod
 import glob
+import subprocess
 
 
 class Density:
@@ -23,7 +24,7 @@ class Density:
           vs = np.zeros((len(fnames), proj['N_V']))
           ws = np.zeros((len(fnames), proj['N_W']))
           for ii, fname in enumerate(fnames):
-              print('Calculating marginals, {} of {}'.format(ii, len(fnames)))
+              print('Calculating marginals, {} of {}'.format(ii+1, len(fnames)))
               vs[ii, :], ws[ii, :] = self.get_marginal_density(
                   modelfname, fname, proj, mesh, force)
           bins_v = np.linspace(proj['V_min'], proj['V_max'], proj['N_V'])
@@ -69,17 +70,12 @@ class Density:
         fpathout = op.join(self.output_directory, 'marginal_density.npz')
         modelfname = op.split(modelfname)[-1]
 
-        def get_scaling(proj):
-            scale = []
-            a = 0
-            for marg in proj.split(';'):
-                if len(marg) == 0:
-                    continue
-                jj, dd = marg.split(',')
-                a += float(dd)
-                scale.append((int(jj), float(dd)))
-            assert a - 1 < 1e-7, a
-            return scale
+        def scale(var, proj, mass):
+            bins = [marg.split(',') for marg in proj.split(';')
+                    if len(marg) > 0]
+            for jj, dd in bins:
+                var[int(jj)] += mass * float(dd)
+            return var
 
         v = np.zeros(proj['N_V'])
         w = np.zeros(proj['N_W'])
@@ -90,15 +86,12 @@ class Density:
             cell_mass = masses[coords.index((i, j))]
             if cell_mass < 1e-15:
                 continue
-
-            for jj, dd in get_scaling(trans['vbins']):
-                v[jj] += cell_mass * dd
-            for jj, dd in get_scaling(trans['wbins']):
-                w[jj] += cell_mass * dd
+            scale(v, trans['vbins'], cell_mass)
+            scale(w, trans['wbins'], cell_mass)
         dv = abs(proj['V_max'] - proj['V_min']) / float(proj['N_V'])
         dw = abs(proj['W_max'] - proj['W_min']) / float(proj['N_W'])
-        for db, n in zip([dv, dw], [v, w]):
-            n = n / db / n.sum()
+        v = v / dv / v.sum()
+        w = w / dw / w.sum()
         return v, w
 
     def get_or_load(self, fname, name):
@@ -140,7 +133,7 @@ class Density:
             print('New N in bins, generating projection file...')
             self.make_projection_file(modelfname, vn, wn)
             proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
-                             text_content=None)
+                               text_content=None)
         mesh = meshmod.Mesh(None)
         mesh.FromXML(proj_pathname)
         result =  {

@@ -35,9 +35,9 @@ def _tostring(value):
     return unicode(value)
 
 
-def xml_to_dict(root, text_content='content'):
+def xml_to_dict(root, text_content='content', dict_type=OrderedDict):
     '''Convert etree.Element into a dictionary'''
-    value = OrderedDict()
+    value = dict_type()
     children = [node for node in root if isinstance(node.tag, basestring)]
     for attr, attrval in root.attrib.items():
         value[attr] = _fromstring(attrval)
@@ -50,11 +50,13 @@ def xml_to_dict(root, text_content='content'):
     count = Counter(child.tag for child in children)
     for child in children:
         if count[child.tag] == 1:
-           value.update(xml_to_dict(child, text_content=text_content))
+           value.update(xml_to_dict(child, text_content=text_content,
+                                    dict_type=dict_type))
         else:
             result = value.setdefault(child.tag, list())
-            result += xml_to_dict(child, text_content=text_content).values()
-    return OrderedDict([(root.tag, value)])
+            result += xml_to_dict(child, text_content=text_content,
+                                  dict_type=dict_type).values()
+    return dict_type([(root.tag, value)])
 
 
 def dict_to_xml(data, root=None, text_content='content'):
