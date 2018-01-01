@@ -11,7 +11,7 @@ import collections
 from xmldict import dict_to_xml, xml_to_dict
 from tools import *
 import hashlib
-from density import Density
+from density import Density, Marginal
 # From MIIND
 import directories
 
@@ -67,6 +67,7 @@ class MiindIO:
         assert op.exists(self.MIIND_APPS)
         if self.WITH_STATE:
             self.density = Density(self)
+            self.marginal = Marginal(self)
 
     @property
     def sha(self):

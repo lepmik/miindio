@@ -29,25 +29,6 @@ def dict_changed(d1, d2):
     return set(o for o in intersect if d2[o] != d1[o])
 
 
-def read_density(filename):
-    f = open(filename, 'r')
-    line = f.readline().split()
-    data = [float(x) for x in line[2::3]]
-    coords = [(int(i), int(j)) for i, j in zip(line[::3], line[1::3])]
-    return data, coords
-
-
-def get_density_time(path):
-    fname = op.split(path)[-1]
-    return float(fname.split('_')[2])
-
-
-def calc_mass(mesh, density, coords):
-    masses = [mesh.cells[i][j].area * dens
-              for (i, j), dens in zip(coords, density)]
-    return masses
-
-
 def prettify_xml(elem):
     """Return a pretty-printed XML string for an Element, string or dict.
     """
