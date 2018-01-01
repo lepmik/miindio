@@ -66,8 +66,9 @@ class MiindIO:
             self.MIIND_APPS = op.join(MIIND_BUILD_PATH, 'apps')
         assert op.exists(self.MIIND_APPS)
         if self.WITH_STATE:
-            self.density = Density(self)
-            self.marginal = Marginal(self)
+            modnames = [split_fname(mn, '.model')[0] for mn in self.modelfiles]
+            self.density = {mn: Density(self, mn) for mn in modnames}
+            self.marginal = {mn: Marginal(self) for mn in modnames}
 
     @property
     def sha(self):

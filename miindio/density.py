@@ -11,18 +11,6 @@ from descartes.patch import PolygonPatch
 from matplotlib.collections import PatchCollection
 
 
-def split_fname(fname, ext):
-    if not ext.startswith('.'):
-        ext = '.' + ext
-    if fname.endswith(ext):
-        modelname = op.splitext(fname)[0]
-        modelfname = fname
-    else:
-        modelname = fname
-        modelfname = fname + ext
-    return modelname, modelfname
-
-
 def replace(value, string, *args):
     for a in args:
         value = value.replace(a, string)
@@ -59,77 +47,69 @@ def calc_mass(mesh, density, coords):
 
 
 class Marginal:
-    def __init__(self, io):
+    def __init__(self, io, modelname, vn=100, wn=100):
         self.io = io
+        self.modelname, self.modelfname = split_fname(modelname, '.model')
+        self.path = op.join(self.io.output_directory,
+                            self.modelname + '_marginal_density')
+        self.data_path = op.join(self.io.output_directory, 'marginal_density.npz')
+        if not op.exists(self.path):
+            os.mkdir(self.path)
+        self.fnames, self.times = find_density_fnames(
+            self.modelfname, self.io.output_directory)
+        self.projfname = self.modelfname.replace('.model', '.projection')
+        self.vn, self.wn = vn, wn
 
-    def __getitem__(self, name=None):
-        return self.get_marginal_densities()[name]
+    def __getitem__(self, name):
+        return self.density[name]
 
-    def __contains__(self, name):
-        return name in self.get_marginal_densities()
+    @property
+    def mesh(self):
+        if not hasattr(self, '_mesh'):
+            mesh = meshmod.Mesh(None)
+            mesh.FromXML(self.modelfname)
+            self._mesh = mesh
+        return self._mesh
 
-    def keys(self):
-        return self.get_marginal_densities().keys()
-
-    def values(self):
-        return self.get_marginal_densities().values()
-
-    def items(self):
-        return self.get_marginal_densities().items()
-
-    def get_marginal_densities(self, modelpath=None, vn=100, wn=100,
-                               force=False):
-        data = {}
-        save = []
-        fpathout = op.join(self.io.output_directory, 'marginal_density.npz')
-        modelfiles = [modelpath] if modelpath is not None else self.modelfiles
-        for modelfname in modelfiles:
-            key = op.splitext(modelfname)[0]
-            if op.exists(fpathout):
-                data_ = np.load(fpathout)['data'][()]
-                if key in data_:
-                    print('Loading marginal density of {}'.format(modelfname) +
-                          ' from file.')
-                    data.update(data_)
-                    save.append(False)
-                    continue
-            print('Calculating marginal density of {}'.format(modelfname) +
-                  ', this can take a while.')
-            tm = time.time()
-            projfname = modelfname.replace('.model', '.projection')
-            proj, mesh = self.read_projection(projfname, vn, wn)
-
-            fnames, times = find_density_fnames(modelfname,
-                                                self.io.output_directory)
-            v = np.zeros((len(fnames), proj['N_V']))
-            w = np.zeros((len(fnames), proj['N_W']))
-            times_ = [get_density_time(f) for f in fnames]
-            masses, coords_ = [], None
-            for ii, fname in enumerate(fnames):
-                density, coords = read_density(fname)
-                if coords_ is None:
-                    coords_ = coords
-                else:
-                    assert coords == coords_
-                masses.append(calc_mass(mesh, density, coords))
-            masses = np.vstack(masses)
-            assert masses.shape[0] == len(fnames)
-            v, w, bins_v, bins_w = self.calc_marginal_density(
-                v, w, masses, coords, proj, mesh)
-            data[key] = {
-                'v': v, 'w': w, 'bins_v': bins_v,
+    @property
+    def density(self):
+        self.read_projection()
+        if op.exists(self.data_path) and not self.new_projection:
+            load_data = np.load(self.data_path)['data'][()]
+            if self.modelname in load_data:
+                print('Loading marginal density of {}'.format(self.modelfname) +
+                      ' from file.')
+                return load_data[self.modelname]
+        print('Calculating marginal density of {}'.format(self.modelfname) +
+              ', this can take a while.')
+        tm = time.time()
+        v = np.zeros((len(fnames), self.projection['N_V']))
+        w = np.zeros((len(fnames), self.projection['N_W']))
+        masses, coords_ = [], None
+        for ii, fname in enumerate(self.fnames):
+            density, coords = read_density(fname)
+            if coords_ is None:
+                coords_ = coords
+            else:
+                assert coords == coords_
+            masses.append(calc_mass(self.mesh, density, coords))
+        masses = np.vstack(masses)
+        assert masses.shape[0] == len(self.fnames)
+        v, w, bins_v, bins_w = self.calc_marginal_density(
+            v, w, masses, coords, self.projection)
+        data = {'v': v, 'w': w, 'bins_v': bins_v,
                 'bins_w': bins_w, 'times': times}
-            print('Calculating marginal density of {}'.format(modelfname) +
-                  ', took {} s.'.format(time.time() - tm))
-            save.append(True)
-        if any(save):
-            if op.exists(fpathout):
-                other = np.load(fpathout)['data'][()]
-                data = other.update(data)
-            np.savez(fpathout, data=data)
+        print('Calculating marginal density of {}'.format(self.modelfname) +
+              ', took {} s.'.format(time.time() - tm))
+        if op.exists(self.data_path):
+            other = np.load(self.data_path)['data'][()]
+            save_data = other.update({self.modelname: data})
+        else:
+            save_data = {self.modelname: data}
+        np.savez(self.data_path, data=save_data)
         return data
 
-    def calc_marginal_density(self, v, w, masses, coords, proj, mesh):
+    def calc_marginal_density(self, v, w, masses, coords, proj):
 
         def scale(var, proj, mass):
             bins = [marg.split(',') for marg in proj.split(';')
@@ -137,7 +117,6 @@ class Marginal:
             for jj, dd in bins:
                 var[:, int(jj)] += mass * float(dd)
             return var
-
         for trans in proj['transitions']:
             i, j = [int(a) for a in trans['coordinates'].split(',')]
             cell_mass = masses[:, coords.index((i, j))]
@@ -154,120 +133,112 @@ class Marginal:
         bins_w = np.linspace(proj['W_min'], proj['W_max'], proj['N_W'])
         return v, w, bins_v, bins_w
 
-    def make_projection_file(self, modelfname, vn, wn):
+    def make_projection_file(self):
         projection_exe = op.join(self.io.MIIND_APPS, 'Projection', 'Projection')
         out = subprocess.check_output(
-          [projection_exe, modelfname], cwd=self.io.xml_location)
+          [projection_exe, self.modelfname], cwd=self.io.xml_location)
         vmax, wmax = np.ceil(np.array(out.split('\n')[3].split(' ')[2:],
                                     dtype=float)).astype(int)
         vmin, wmin = np.floor(np.array(out.split('\n')[4].split(' ')[2:],
                                     dtype=float)).astype(int)
-        cmd = [projection_exe, modelfname, vmin, vmax,
-             vn, wmin, wmax, wn]
+        cmd = [projection_exe, self.modelfname, vmin, vmax,
+               self.vn, wmin, wmax, self.wn]
         subprocess.call([str(c) for c in cmd], cwd=self.io.xml_location)
 
-    def read_projection(self, projfname, vn, wn):
-        proj_pathname = op.join(self.io.xml_location, projfname)
-        modelfname = projfname.replace('.projection', '.model')
+    def read_projection(self):
+        proj_pathname = op.join(self.io.xml_location, self.projfname)
+        self.new_projection = False
         if not op.exists(proj_pathname):
             print('No projection file found, generating...')
-            self.make_projection_file(modelfname, vn, wn)
-        proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
-                         text_content=None)
-        if (proj['Projection']['W_limit']['N_W'] != wn or
-        proj['Projection']['V_limit']['N_V'] != vn):
+            self.make_projection_file(self.modelfname, self.vn, self.wn)
+            self.new_projection = True
+        if not hasattr(self, 'projection'):
+            self._proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
+                                      text_content=None)['Projection']
+        if (self._proj['W_limit']['N_W'] != self.wn or
+            self._proj['V_limit']['N_V'] != self.vn):
             print('New N in bins, generating projection file...')
-            self.make_projection_file(modelfname, vn, wn)
-            proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
-                               text_content=None)
-        mesh = meshmod.Mesh(None)
-        mesh.FromXML(proj_pathname)
-        result =  {
-            'transitions': proj['Projection']['transitions']['cell'],
-            'V_min': proj['Projection']['V_limit']['V_min'],
-            'V_max': proj['Projection']['V_limit']['V_max'],
-            'N_V': proj['Projection']['V_limit']['N_V'],
-            'W_min': proj['Projection']['W_limit']['W_min'],
-            'W_max': proj['Projection']['W_limit']['W_max'],
-            'N_W': proj['Projection']['W_limit']['N_W'],
+            self.make_projection_file(self.modelfname, self.vn, self.wn)
+            self._proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
+                                      text_content=None)['Projection']
+            self.new_projection = True
+        self.projection =  {
+            'transitions': self._proj['transitions']['cell'],
+            'V_min': self._proj['V_limit']['V_min'],
+            'V_max': self._proj['V_limit']['V_max'],
+            'N_V': self._proj['V_limit']['N_V'],
+            'W_min': self._proj['W_limit']['W_min'],
+            'W_max': self._proj['W_limit']['W_max'],
+            'N_W': self._proj['W_limit']['N_W'],
         }
-        return result, mesh
 
-    def plot_marginal_density(self, **args):
-        data_ = self.get_marginal_densities(**args)
-        for modelfname, data in data_.items():
-            path = op.join(self.io.output_directory,
-                          op.splitext(modelfname)[0] +
-                          '_marginal_density')
-            if not op.exists(path):
-                os.mkdir(path)
-            for ii in range(len(data['times'])):
-                fig, axs = plt.subplots(1, 2)
-                params = {
-                    'ax': axs,
-                    'dens': [data['v'], data['w']],
-                    'bins': [data['bins_v'], data['bins_w']]
-                }
-                params = [{k: v[i] for k, v in params.items()}
-                          for i in range(len(params['ax']))]
-                plt.suptitle('time = {}'.format(data['times'][ii]))
-                for p in params:
-                    p['ax'].plot(p['bins'], p['dens'][ii, :])
-                    figname = op.join(path,
-                                      '{}_'.format(ii) +
-                                      '{}.png'.format(data['times'][ii]))
-                    fig.savefig(figname, res=300, bbox_inches='tight')
-                    plt.close(fig)
+    def plot_marginal_density(self):
+
+        for ii in range(len(self['times'])):
+            fig, axs = plt.subplots(1, 2)
+            params = {
+                'ax': axs,
+                'dens': [self['v'], self['w']],
+                'bins': [self['bins_v'], self['bins_w']]
+            }
+            params = [{k: v[i] for k, v in params.items()}
+                      for i in range(len(params['ax']))]
+            plt.suptitle('time = {}'.format(self['times'][ii]))
+            for p in params:
+                p['ax'].plot(p['bins'], p['dens'][ii, :])
+                figname = op.join(path,
+                                  '{}_'.format(ii) +
+                                  '{}.png'.format(self['times'][ii]))
+                fig.savefig(figname, res=300, bbox_inches='tight')
+                plt.close(fig)
 
 
 class Density:
-    def __init__(self, io):
+    def __init__(self, io, modelname):
         self.io = io
+        self.modelname, self.modelfname = split_fname(modelname, '.model')
+        self.path = op.join(self.io.output_directory,
+                            self.modelname + '_density')
+        if not op.exists(self.path):
+            os.mkdir(self.path)
+        self.fnames, self.times = find_density_fnames(
+            self.modelfname, self.io.output_directory)
 
-    def mesh(self, modelname):
-        modelname, modelfname = split_fname(modelname, '.model')
+    @property
+    def mesh(self):
         if not hasattr(self, '_mesh'):
-            self._mesh = {}
-        if modelname not in self._mesh:
             mesh = meshmod.Mesh(None)
-            mesh.FromXML(modelfname)
-            self._mesh[modelname] = mesh
-        return self._mesh[modelname]
+            mesh.FromXML(self.modelfname)
+            self._mesh = mesh
+        return self._mesh
 
-    def polygons(self, modelname):
-        modelname, modelfname = split_fname(modelname, '.model')
+    @property
+    def polygons(self):
         if not hasattr(self, '_polygons'):
-            self._polygons = {}
-        if modelname not in self._polygons:
-            self._polygons[modelname] = odict(
+            self._polygons = odict(
                 ((i, j),
                 Polygon([(float(x), float(y))
                          for x, y in zip(cell.vs, cell.ws)]))
-                for i, cells in enumerate(self.mesh(modelname).cells)
+                for i, cells in enumerate(self.mesh.cells)
                 for j, cell in enumerate(cells)
             )
-        return self._polygons[modelname]
+        return self._polygons
 
-    def patches(self, modelname):
-        modelname, modelfname = split_fname(modelname, '.model')
+    @property
+    def patches(self):
         if not hasattr(self, '_patches'):
-            self._patches = {}
-        if modelname not in self._patches:
-            self._patches[modelname] = [
+            self._patches = [
                 PolygonPatch(polygon)
-                for polygon in self.polygons(modelname).values()
+                for polygon in self.polygons.values()
             ]
-        return self._patches[modelname]
+        return self._patches
 
-    def plot_mesh(self, modelname, ax=None):
-        modelname, modelfname = split_fname(modelname, '.model')
+    def plot_mesh(self, ax=None):
         if ax is None:
             fig, ax = plt.subplots()
-        mesh = self.mesh(modelname)
-        md = mesh.dimensions()
-        p = PatchCollection(self.patches(modelname), alpha=1, edgecolors='k',
+        md = self.mesh.dimensions()
+        p = PatchCollection(self.patches, alpha=1, edgecolors='k',
                             facecolors='w')
-        # p.set_array(np.array(colors))
         ax.add_collection(p)
         ax.set_xlim(md[0])
         ax.set_ylim(md[1])
@@ -275,44 +246,32 @@ class Density:
         ax.set_aspect(aspect)
         return ax
 
-    def plot_density(self, modelname, time=None, timestep=None, colorbar=None,
-                     cmap='inferno'):
-        modelname, modelfname = split_fname(modelname, '.model')
-        path = op.join(self.io.output_directory,
-                       op.splitext(modelfname)[0] + '_density')
-        if not op.exists(path):
-            os.mkdir(path)
-        fnames, times = find_density_fnames(modelfname,
-                                            self.io.output_directory)
-        idxs = range(len(times))
-        if time is not None:
-            assert timestep is None
-            idx = times.index(time)
-            idxs, fnames, times = [idx], [fnames[idx]], [times[idx]]
-        if timestep is not None:
-            assert time is None
-            fnames = fnames[::timestep]
-            times_ = times[::timestep]
-            idxs = [times.index(time) for time in times_]
-            times = times_
-
-        mesh = self.mesh(modelname)
-        md = mesh.dimensions()
-
-        poly_coords = list(self.polygons(modelname).keys())
-        for fname, time, ii in zip(fnames, times, idxs):
+    def plot_density(self, fname, colorbar=None, cmap='inferno', ax=None,
+                     save=True, ext='.png'):
+        if not ext.startswith('.'):
+            ext = '.' + ext
+        if ax is None:
             fig, ax = plt.subplots()
-            ax.set_xlim(md[0])
-            ax.set_ylim(md[1])
-            aspect = (md[0][1] - md[0][0]) / (md[1][1] - md[1][0])
-            ax.set_aspect(aspect)
-            p = PatchCollection(self.patches(modelname), cmap=cmap)
-            density, coords = read_density(fname)
-            sort_idx = sorted(range(len(coords)), key=coords.__getitem__)
-            coords = [coords[i] for i in sort_idx]
-            density = [density[i] for i in sort_idx]
-            assert coords == poly_coords
-            p.set_array(np.array(density))
-            ax.add_collection(p)
-            figname = op.join(path, '{}_'.format(ii) + '{}.png'.format(time))
-            fig.savefig(figname, res=300, bbox_inches='tight')
+        time = get_density_time(fname)
+        idx = self.times.index(time)
+        md = self.mesh.dimensions()
+        poly_coords = list(self.polygons.keys())
+        ax.set_xlim(md[0])
+        ax.set_ylim(md[1])
+        aspect = (md[0][1] - md[0][0]) / (md[1][1] - md[1][0])
+        ax.set_aspect(aspect)
+        p = PatchCollection(self.patches, cmap=cmap)
+        density, coords = read_density(fname)
+        sort_idx = sorted(range(len(coords)), key=coords.__getitem__)
+        coords = [coords[i] for i in sort_idx]
+        density = [density[i] for i in sort_idx]
+        assert coords == poly_coords
+        p.set_array(np.array(density))
+        ax.add_collection(p)
+        if colorbar is not None:
+            plt.colorbar(p)
+        if save:
+            figname = op.join(
+                self.path, '{}_'.format(idx) +
+                '{}'.format(time)).replace('.', '-')
+            plt.gcf().savefig(figname + ext, res=300, bbox_inches='tight')

@@ -23,6 +23,19 @@ class cd:
         os.chdir(self.savedPath)
 
 
+def split_fname(fname, ext):
+    fname = op.split(fname)[1]
+    if not ext.startswith('.'):
+        ext = '.' + ext
+    if fname.endswith(ext):
+        modelname = op.splitext(fname)[0]
+        modelfname = fname
+    else:
+        modelname = fname
+        modelfname = fname + ext
+    return modelname, modelfname
+
+
 def dict_changed(d1, d2):
     k1, k2 = [set(d.keys()) for d in (d1, d2)]
     intersect = k1.intersection(k2)
