@@ -77,11 +77,12 @@ class MiindIO:
         sha = hashlib.sha1(par_str).hexdigest()
         return sha
 
-    def get_rates(self):
-        fnameout = op.join(self.output_directory,
-                                 self.simulation_name + '_rates.npz')
+    @property
+    def rates(self):
         if hasattr(self, '_rates'):
             return self._rates
+        fnameout = op.join(self.output_directory,
+                                 self.simulation_name + '_rates.npz')
         if op.exists(fnameout):
             return np.load(fnameout)['data'][()]
         f = ROOT.TFile(self.root_path)

@@ -55,7 +55,7 @@ def plot_density_(xml_path, model_name, **kwargs):
     io = MiindIO(xml_path, kwargs['directory'])
     density = io.density[model_name]
     for fname in density.fnames:
-        density.plot_density(fname)
+        density.plot_density(fname, save=True)
 
 
 def main():

@@ -167,7 +167,6 @@ def set_params(params, **kwargs):
         if len(old_mapping) == 0:
             raise ValueError('Unable to map instance of "{}", '.format(key))
         if len(old_mapping) > 1:
-            print(old_mapping)
             raise ValueError('Found multiple instances of "{}", '.format(key) +
                              'mapping must be unique')
         path, old_val = old_mapping[0]

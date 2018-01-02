@@ -246,7 +246,7 @@ class Density:
         return vmin, vmax, vals
 
     def plot_density(self, fname, colorbar=None, cmap='inferno', ax=None,
-                     save=True, ext='.png'):
+                     save=False, ext='.png'):
         if not ext.startswith('.'):
             ext = '.' + ext
         if ax is None:
