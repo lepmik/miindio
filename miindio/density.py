@@ -77,14 +77,9 @@ class Marginal:
         if op.exists(self.data_path) and not self.new_projection:
             load_data = np.load(self.data_path)['data'][()]
             if self.modelname in load_data:
-                print('Loading marginal density of {}'.format(self.modelfname) +
-                      ' from file.')
                 return load_data[self.modelname]
-        print('Calculating marginal density of {}'.format(self.modelfname) +
-              ', this can take a while.')
-        tm = time.time()
-        v = np.zeros((len(fnames), self.projection['N_V']))
-        w = np.zeros((len(fnames), self.projection['N_W']))
+        v = np.zeros((len(self.fnames), self.projection['N_V']))
+        w = np.zeros((len(self.fnames), self.projection['N_W']))
         masses, coords_ = [], None
         for ii, fname in enumerate(self.fnames):
             density, coords = read_density(fname)
@@ -98,9 +93,7 @@ class Marginal:
         v, w, bins_v, bins_w = self.calc_marginal_density(
             v, w, masses, coords, self.projection)
         data = {'v': v, 'w': w, 'bins_v': bins_v,
-                'bins_w': bins_w, 'times': times}
-        print('Calculating marginal density of {}'.format(self.modelfname) +
-              ', took {} s.'.format(time.time() - tm))
+                'bins_w': bins_w, 'times': self.times}
         if op.exists(self.data_path):
             other = np.load(self.data_path)['data'][()]
             save_data = other.update({self.modelname: data})
@@ -150,7 +143,7 @@ class Marginal:
         self.new_projection = False
         if not op.exists(proj_pathname):
             print('No projection file found, generating...')
-            self.make_projection_file(self.modelfname, self.vn, self.wn)
+            self.make_projection_file()
             self.new_projection = True
         if not hasattr(self, 'projection'):
             self._proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
@@ -158,7 +151,7 @@ class Marginal:
         if (self._proj['W_limit']['N_W'] != self.wn or
             self._proj['V_limit']['N_V'] != self.vn):
             print('New N in bins, generating projection file...')
-            self.make_projection_file(self.modelfname, self.vn, self.wn)
+            self.make_projection_file()
             self._proj = xml_to_dict(ET.parse(proj_pathname).getroot(),
                                       text_content=None)['Projection']
             self.new_projection = True
@@ -172,8 +165,7 @@ class Marginal:
             'N_W': self._proj['W_limit']['N_W'],
         }
 
-    def plot_marginal_density(self):
-
+    def plot(self):
         for ii in range(len(self['times'])):
             fig, axs = plt.subplots(1, 2)
             params = {
@@ -186,7 +178,7 @@ class Marginal:
             plt.suptitle('time = {}'.format(self['times'][ii]))
             for p in params:
                 p['ax'].plot(p['bins'], p['dens'][ii, :])
-                figname = op.join(path,
+                figname = op.join(self.path,
                                   '{}_'.format(ii) +
                                   '{}.png'.format(self['times'][ii]))
                 fig.savefig(figname, res=300, bbox_inches='tight')
@@ -275,3 +267,4 @@ class Density:
                 self.path, '{}_'.format(idx) +
                 '{}'.format(time)).replace('.', '-')
             plt.gcf().savefig(figname + ext, res=300, bbox_inches='tight')
+            plt.close(plt.gcf())

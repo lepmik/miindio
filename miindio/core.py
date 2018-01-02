@@ -68,7 +68,7 @@ class MiindIO:
         if self.WITH_STATE:
             modnames = [split_fname(mn, '.model')[0] for mn in self.modelfiles]
             self.density = {mn: Density(self, mn) for mn in modnames}
-            self.marginal = {mn: Marginal(self) for mn in modnames}
+            self.marginal = {mn: Marginal(self, mn) for mn in modnames}
 
     @property
     def sha(self):
