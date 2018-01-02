@@ -238,6 +238,13 @@ class Density:
         ax.set_aspect(aspect)
         return ax
 
+    def colscale(self, density):
+        cols = np.log10(np.array(density) + 1e-6)
+        vmax = np.max(cols)
+        vmin = np.min(cols)
+        vals = (cols - vmin)/(vmax - vmin)
+        return vmin, vmax, vals
+
     def plot_density(self, fname, colorbar=None, cmap='inferno', ax=None,
                      save=True, ext='.png'):
         if not ext.startswith('.'):
@@ -258,7 +265,8 @@ class Density:
         coords = [coords[i] for i in sort_idx]
         density = [density[i] for i in sort_idx]
         assert coords == poly_coords
-        p.set_array(np.array(density))
+        vmin, vmax, scaled_density = self.colscale(density)
+        p.set_array(scaled_density)
         ax.add_collection(p)
         if colorbar is not None:
             plt.colorbar(p)
