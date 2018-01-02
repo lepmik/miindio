@@ -51,10 +51,11 @@ def plot_marginal_density_(xml_path, model_name, **kwargs):
 @click.argument("xml_path", type=click.Path(exists=True))
 @click.argument("model_name", type=click.STRING)
 @click.option("--directory", "-d", type=click.Path(exists=True))
+@click.option("--timestep", "-t", type=click.INT)
 def plot_density_(xml_path, model_name, **kwargs):
     io = MiindIO(xml_path, kwargs['directory'])
     density = io.density[model_name]
-    for fname in density.fnames:
+    for fname in density.fnames[::kwargs['timestep']]:
         density.plot_density(fname, save=True)
 
 

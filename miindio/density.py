@@ -46,22 +46,23 @@ def calc_mass(mesh, density, coords):
     return masses
 
 
-class Marginal:
-    def __init__(self, io, modelname, vn=100, wn=100):
+class General(object):
+    def __init__(self, io, modelname):
         self.io = io
         self.modelname, self.modelfname = split_fname(modelname, '.model')
-        self.path = op.join(self.io.output_directory,
-                            self.modelname + '_marginal_density')
-        self.data_path = op.join(self.io.output_directory, 'marginal_density.npz')
-        if not op.exists(self.path):
-            os.mkdir(self.path)
-        self.fnames, self.times = find_density_fnames(
-            self.modelfname, self.io.output_directory)
-        self.projfname = self.modelfname.replace('.model', '.projection')
-        self.vn, self.wn = vn, wn
 
-    def __getitem__(self, name):
-        return self.density[name]
+    @property
+    def fnames(self):
+        if not hasattr(self, '_fnames'):
+            self._fnames, self._times = find_density_fnames(
+                self.modelfname, self.io.output_directory)
+        return self._fnames
+
+    @property
+    def times(self):
+        if not hasattr(self, '_times'):
+            self.fnames
+        return self._times
 
     @property
     def mesh(self):
@@ -70,6 +71,19 @@ class Marginal:
             mesh.FromXML(self.modelfname)
             self._mesh = mesh
         return self._mesh
+
+
+class Marginal(General):
+    def __init__(self, io, modelname, vn=100, wn=100):
+        super(Marginal, self).__init__(io, modelname)
+        self.path = op.join(self.io.output_directory,
+                            self.modelname + '_marginal_density')
+        self.data_path = op.join(self.io.output_directory, 'marginal_density.npz')
+        self.projfname = self.modelfname.replace('.model', '.projection')
+        self.vn, self.wn = vn, wn
+
+    def __getitem__(self, name):
+        return self.density[name]
 
     @property
     def density(self):
@@ -96,7 +110,8 @@ class Marginal:
                 'bins_w': bins_w, 'times': self.times}
         if op.exists(self.data_path):
             other = np.load(self.data_path)['data'][()]
-            save_data = other.update({self.modelname: data})
+            other.update({self.modelname: data})
+            save_data = other
         else:
             save_data = {self.modelname: data}
         np.savez(self.data_path, data=save_data)
@@ -166,6 +181,8 @@ class Marginal:
         }
 
     def plot(self):
+        if not op.exists(self.path):
+            os.mkdir(self.path)
         for ii in range(len(self['times'])):
             fig, axs = plt.subplots(1, 2)
             params = {
@@ -185,24 +202,11 @@ class Marginal:
                 plt.close(fig)
 
 
-class Density:
+class Density(General):
     def __init__(self, io, modelname):
-        self.io = io
-        self.modelname, self.modelfname = split_fname(modelname, '.model')
+        super(Density, self).__init__(io, modelname)
         self.path = op.join(self.io.output_directory,
                             self.modelname + '_density')
-        if not op.exists(self.path):
-            os.mkdir(self.path)
-        self.fnames, self.times = find_density_fnames(
-            self.modelfname, self.io.output_directory)
-
-    @property
-    def mesh(self):
-        if not hasattr(self, '_mesh'):
-            mesh = meshmod.Mesh(None)
-            mesh.FromXML(self.modelfname)
-            self._mesh = mesh
-        return self._mesh
 
     @property
     def polygons(self):
@@ -271,6 +275,8 @@ class Density:
         if colorbar is not None:
             plt.colorbar(p)
         if save:
+            if not op.exists(self.path):
+                os.mkdir(self.path)
             figname = op.join(
                 self.path, '{}_'.format(idx) +
                 '{}'.format(time)).replace('.', '-')
