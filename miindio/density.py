@@ -50,6 +50,7 @@ class General(object):
     def __init__(self, io, modelname):
         self.io = io
         self.modelname, self.modelfname = split_fname(modelname, '.model')
+        self.modelpath = op.join(self.io.xml_location, self.modelfname)
 
     @property
     def fnames(self):
@@ -68,7 +69,7 @@ class General(object):
     def mesh(self):
         if not hasattr(self, '_mesh'):
             mesh = meshmod.Mesh(None)
-            mesh.FromXML(self.modelfname)
+            mesh.FromXML(self.modelpath)
             self._mesh = mesh
         return self._mesh
 
@@ -79,7 +80,7 @@ class Marginal(General):
         self.path = op.join(self.io.output_directory,
                             self.modelname + '_marginal_density')
         self.data_path = op.join(self.io.output_directory, 'marginal_density.npz')
-        self.projfname = self.modelfname.replace('.model', '.projection')
+        self.projfname = self.modelpath.replace('.model', '.projection')
         self.vn, self.wn = vn, wn
 
     def __getitem__(self, name):
