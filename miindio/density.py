@@ -146,10 +146,12 @@ class Marginal(General):
         projection_exe = op.join(self.io.MIIND_APPS, 'Projection', 'Projection')
         out = subprocess.check_output(
           [projection_exe, self.modelfname], cwd=self.io.xml_location)
-        vmax, wmax = np.ceil(np.array(out.split('\n')[3].split(' ')[2:],
-                                    dtype=float)).astype(int)
-        vmin, wmin = np.floor(np.array(out.split('\n')[4].split(' ')[2:],
-                                    dtype=float)).astype(int)
+        vmax, wmax = np.array(out.split('\n')[3].split(' ')[2:], dtype=float)
+        vmin, wmin = np.array(out.split('\n')[4].split(' ')[2:], dtype=float)
+        # assert that we bound the range
+        inc = lambda x: x * 1.01 if x > 0 else x * 0.99
+        vmax, wmax = inc(vmax), inc(wmax)
+        vmin, wmin = -inc(-vmin) , -inc(-wmin)
         cmd = [projection_exe, self.modelfname, vmin, vmax,
                self.vn, wmin, wmax, self.wn]
         subprocess.call([str(c) for c in cmd], cwd=self.io.xml_location)
