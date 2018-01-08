@@ -149,7 +149,7 @@ class MiindIO:
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
 
-    def generate(self, **kwargs):
+    def generate(self, *args):
         if op.exists(self.output_directory):
             shutil.rmtree(self.output_directory)
         with cd(self.xml_location):
@@ -157,7 +157,8 @@ class MiindIO:
         fnames = os.listdir(self.output_directory)
         if 'CMakeLists.txt' in fnames:
             subprocess.call(['cmake', '-DCMAKE_BUILD_TYPE=Release',
-                             '-DCMAKE_CXX_FLAGS=-fext-numeric-literals'],
+                             '-DCMAKE_CXX_FLAGS=-fext-numeric-literals'] +
+                             [a for a in args],
                              cwd=self.output_directory)
             subprocess.call(['make'], cwd=self.output_directory)
             shutil.copyfile(self.xml_path, op.join(self.output_directory,
