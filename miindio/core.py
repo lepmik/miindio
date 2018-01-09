@@ -149,8 +149,8 @@ class MiindIO:
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
 
-    def generate(self, *args):
-        if op.exists(self.output_directory):
+    def generate(self, *args, overwrite=False):
+        if op.exists(self.output_directory) and overwrite:
             shutil.rmtree(self.output_directory)
         with cd(self.xml_location):
             directories.add_executable(self.submit_name, [self.xml_path], '')
