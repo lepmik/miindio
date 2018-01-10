@@ -1,5 +1,8 @@
 import click
 from miindio import MiindIO
+import matplotlib
+import matplotlib.pyplot as plt
+import copy
 
 
 @click.group()
@@ -7,7 +10,7 @@ def cli():
     pass
 
 
-@cli.command("generate", short_help='Generate a MIIND executable based on a ' +
+@cli.command("submit", short_help='Generate a MIIND executable based on a ' +
              '"xml" parameter file.')
 @click.argument("xml_path", type=click.Path(exists=True))
 @click.option("--directory", "-d", type=click.Path(exists=True))
@@ -57,6 +60,36 @@ def plot_density_(xml_path, model_name, **kwargs):
     density = io.density[model_name]
     for fname in density.fnames[::kwargs['timestep']]:
         density.plot_density(fname, save=True)
+
+
+@cli.command("lost",
+             short_help='Plot .lost file')
+@click.argument("lost_path", type=click.Path(exists=True))
+def plot_lost_(lost_path, **kwargs):
+    from miindio.lost_tools import (add_fiducial, extract_base,
+                                    plot_lost, read_fiducial,
+                                    onclick, zoom_fun, onkey)
+    backend = matplotlib.get_backend().lower()
+    if backend not in ['qt4agg']:
+        print('Warning: backend not recognized as working with "lost.py", ' +
+              'if you do not encounter any issues with your current backend ' +
+              '{}, please add it to this list.'.format(backend))
+    curr_points = []
+    fig = plt.figure()
+    ax = plot_lost(lost_path)
+    fid_fname = extract_base(lost_path) + '.fid'
+    patches = read_fiducial(fid_fname)
+    quads = copy.deepcopy(patches)
+    for patch in patches:
+        add_fiducial(ax, patch)
+
+    fig.canvas.mpl_connect('button_press_event',
+                           lambda event: onclick(event, ax, fid_fname,
+                                                 curr_points, quads))
+    fig.canvas.mpl_connect('scroll_event', lambda event: zoom_fun(event, ax))
+    fig.canvas.mpl_connect('key_press_event',
+                           lambda event: onkey(event, ax, fid_fname, quads))
+    plt.show()
 
 
 def main():
