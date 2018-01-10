@@ -149,7 +149,7 @@ class MiindIO:
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
 
-    def generate(self, overwrite=False, *args):
+    def submit(self, overwrite=False, *args):
         if op.exists(self.output_directory) and overwrite:
             shutil.rmtree(self.output_directory)
         with cd(self.xml_location):

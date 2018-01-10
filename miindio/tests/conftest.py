@@ -16,6 +16,6 @@ def pytest_namespace():
 def io_run():
     io = MiindIO(xml_path)
     if not io.run_exists:
-        io.generate()
+        io.submit()
         io.run()
     return io

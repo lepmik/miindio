@@ -17,7 +17,7 @@ def cli():
 @click.option("--run", "-r", is_flag=True)
 def generate_(xml_path, **kwargs):
     io = MiindIO(xml_path, kwargs['directory'])
-    io.generate()
+    io.submit()
     if kwargs['run']:
         io.run()
 
@@ -30,7 +30,7 @@ def generate_(xml_path, **kwargs):
 def run_(xml_path, **kwargs):
     io = MiindIO(xml_path, kwargs['directory'])
     if kwargs['generate']:
-        io.generate()
+        io.submit()
     io.run()
 
 
