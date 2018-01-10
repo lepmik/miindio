@@ -25,20 +25,19 @@ def write_fid(fid_fname, quadlist):
             f.write('</Quadrilateral>\n')
         f.write('</Fiducial>\n')
 
+
 def read_file(fn):
-    f=open(fn)
-    lines=f.readlines()
-
-    x=[ float(item.split()[0]) for item in lines ]
-    y=[ float(item.split()[1]) for item in lines ]
-
+    f = open(fn)
+    lines = f.readlines()
+    x = [float(item.split()[0]) for item in lines]
+    y = [float(item.split()[1]) for item in lines]
     return x, y
 
-def plot_lost(fn):
 
+def plot_lost(fn):
     ax = plt.gcf().add_subplot(111)
-    x,y = read_file(fn)
-    plt.plot(x,y,'.')
+    x, y = read_file(fn)
+    plt.plot(x, y, '.')
     return ax
 
 
