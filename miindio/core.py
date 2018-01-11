@@ -89,30 +89,21 @@ class MiindIO:
         keys = [key.GetName() for key in list(f.GetListOfKeys())]
         graphs = {key: f.Get(key) for key in keys
                   if isinstance(f.Get(key), ROOT.TGraph)}
-        rdata = {}
+        _rates = {}
         for key, g in graphs.iteritems():
             x, y, N = g.GetX(), g.GetY(), g.GetN()
             x.SetSize(N)
             y.SetSize(N)
             xa = np.array(x, copy=True)
             ya = np.array(y, copy=True)
-            rdata[key] = np.hstack([xa.reshape(len(xa), 1),
-                                    ya.reshape(len(ya), 1)])
-        _rates = {'x': {'_'.join(key.split('_')[:2]): list() for key in rdata.keys()},
-                'y': {'_'.join(key.split('_')[:2]): list() for key in rdata.keys()}}
-        keys = ['x', 'y']
-        for i, xy in enumerate(keys):
-            for key, val in rdata.iteritems():
-                sp = key.split('_')
-                skey = '_'.join(key.split('_')[:2])
-                if len(sp) == 3:
-                    continue
-                else:
-                    _rates[xy][skey].append(val[:, i])
-            # Convert to np array
-            for key, val in _rates[xy].iteritems():
-                _rates[xy][key] = np.array(val).flatten()[2::2] # TODO HACK TODO why every other here??? bug in miind??
-        print 'Extracted %i graphs from root file' % len(_rates['x'].keys())
+            times = xa.flatten()[2::2]
+            if not 'times' in _rates:
+                _rates['times'] = times
+            else:
+                assert not any(_rates['times'] - times > 1e-15)
+            # TODO HACK TODO why every other here??? bug in miind??
+            _rates[int(key.split('_')[-1])] = ya.flatten()[2::2]
+        print 'Extracted %i rates from root file' % len(_rates.keys())
         self._rates = _rates
         np.savez(fnameout, data=_rates)
         return _rates
@@ -148,6 +139,15 @@ class MiindIO:
 
     def load_xml(self):
         self.params = convert_xml_dict(self.xml_path)
+
+    @property
+    def nodes(self):
+        algos = self.params['Simulation']['Algorithms']['Algorithm']
+        nods = copy.deepcopy(self.params['Simulation']['Nodes']['Node'])
+        models = {m.get('name'): m.get('modelfile') for m in algos}
+        for node in nods:
+            node.update({'modelfile': models[node['algorithm']]})
+        return nods
 
     def submit(self, overwrite=False, *args):
         if op.exists(self.output_directory) and overwrite:
